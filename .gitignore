@@ -15,3 +15,8 @@ venv/
 data/processed/
 data/generated/
 data/benchmark/
+
+# Classical GraphSAGE experiment outputs (plan §43): regenerable from
+# scripts/run_graphsage_experiment.py + configs/graphsage.yaml, same
+# reasoning as data/generated/ above.
+experiments/

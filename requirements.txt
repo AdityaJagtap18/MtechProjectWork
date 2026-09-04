@@ -5,3 +5,11 @@ openpyxl>=3.1
 networkx>=3.0
 scipy>=1.10
 pytest>=7.0
+
+# Classical GraphSAGE modeling stage (pip install -e ".[modeling]").
+# torch: install the CPU wheel explicitly first if you don't need CUDA:
+#   pip install --index-url https://download.pytorch.org/whl/cpu torch
+torch>=2.2
+torch_geometric>=2.5
+scikit-learn>=1.3
+matplotlib>=3.7

@@ -1,0 +1,72 @@
+# Classical GraphSAGE configuration (plan CLASSICAL_GRAPHSAGE_IMPLEMENTATION_PLAN.md §44/§60).
+#
+# `dataset_id` pins one of the four assembled datasets under
+# `data/benchmark/` (see benchmark_manifest.json). scm_v1_black_swan_seed43
+# is used as the primary/frozen dataset: it is the only black-swan dataset
+# with all three split types generated AND it is the dataset the prior
+# session's WORK_SUMMARY.md already traced end-to-end (event_3, severity 5,
+# supplier_279) -- reusing it keeps this benchmark's illustrative examples
+# consistent with that narrative. scm_v1_black_swan_seed44 has a higher
+# positive rate (6.1% vs 3.3%) and remains available for a robustness rerun
+# by pointing this field at it.
+dataset:
+  benchmark_path: data/benchmark
+  dataset_id: scm_v1_black_swan_seed43
+
+prediction:
+  # Ground truth target column, read from labels/supplier_labels.csv --
+  # never redefined or recomputed from anything else (plan §5/§20).
+  target: supplier_disrupted
+  # Y(t) = 1 if supplier_disrupted == 1 for any period in (t, t + horizon_periods].
+  horizon_periods: 4
+
+features:
+  # Rolling-window dynamic feature widths, in periods (plan §13/§19).
+  rolling_windows: [4, 8, 12]
+  # Minimum periods of history required before a period can be used as a
+  # prediction time (must be >= max(rolling_windows) - 1 so every window is
+  # fully in-range; kept as its own knob in case that invariant ever needs
+  # to be loosened deliberately).
+  min_history_periods: 12
+
+split:
+  # temporal (primary, 3-way train/validation/test) | scenario | severity
+  # (both secondary, 2-way train/test generalization experiments -- see
+  # plan §29/§30 and modeling/data.py's build_split_assignment).
+  strategy: temporal
+  train_frac: 0.7
+  val_frac: 0.15
+  # scenario split only: event type(s) held out for the test partition.
+  scenario_test_event_types: [cyberattack]
+  # severity split only: train on severity <= this, test on severity > this.
+  severity_train_max: 3
+  # scenario/severity splits don't produce a validation partition on their
+  # own (plan's split files are train/test only); carve validation out of
+  # the tail of the resulting train pool, ordered by time, for early
+  # stopping. Documented deviation -- see modeling/data.py.
+  generalization_val_frac: 0.15
+
+model:
+  name: hetero_graphsage
+  hidden_dim: 128
+  num_layers: 2
+  dropout: 0.20
+  aggregation: mean
+
+training:
+  epochs: 100
+  learning_rate: 0.001
+  weight_decay: 0.0001
+  early_stopping_patience: 10
+  class_weighting: balanced
+
+threshold:
+  # fixed | f1_optimal | recall_constrained | precision_constrained
+  policy: fixed
+  value: 0.5
+  # used only by recall_constrained / precision_constrained
+  target_value: 0.8
+
+experiment:
+  output_dir: experiments/classical_gnn
+  seeds: [42, 43, 44, 45, 46]
