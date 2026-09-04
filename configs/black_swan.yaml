@@ -1,0 +1,57 @@
+# Phase 5: same network/topology/simulation settings as normal.yaml, but
+# with the black-swan event engine turned on (plan §25 Dataset D). Used via
+# scripts/generate_black_swan.py, which loads an EXISTING graph (e.g. from
+# scm_v1_normal_seed42) rather than regenerating topology, so network/
+# topology below only matter if this config is ever passed to
+# generate_topology.py/generate_normal.py directly instead.
+#
+# seed is deliberately different from normal.yaml's 42: it controls event/
+# operations randomness for THIS run, producing a different disruption
+# realization on the same underlying supply chain.
+
+seed: 43
+
+network:
+  suppliers: 300
+  procurement_orders: 2000
+  materials: 100
+  plants: 50
+  products: 200
+  regions: 20
+
+topology:
+  p_single_source_material: 0.3
+  multi_source_min: 2
+  multi_source_max: 5
+  same_industry_bias: 0.8
+  materials_per_plant_min: 5
+  materials_per_plant_max: 20
+  home_region_bias: 0.7
+
+simulation:
+  horizon_periods: 104
+  periods_per_year: 52
+  days_per_period: 7
+  demand_seasonal_amplitude: 0.3
+  demand_drift_std: 0.05
+  initial_inventory_periods: 4.0
+  reorder_threshold_periods: 1.5
+  replenishment_multiplier: 2.0
+  supplier_capacity_headroom: 1.5
+
+# plan §38's example event probabilities, reused verbatim as the default
+# regime -- treat these as experimental parameters, not measured real-world
+# probabilities (plan §38 note, §43.5).
+events:
+  enabled: true
+  supplier_failure:
+    probability: 0.02
+  natural_disaster:
+    probability: 0.01
+  geopolitical:
+    probability: 0.005
+  cyberattack:
+    probability: 0.01
+  logistics:
+    probability: 0.015
+  severity_weights: [0.35, 0.30, 0.20, 0.10, 0.05]

@@ -1,0 +1,12 @@
+{
+  "source_name": "World Bank Worldwide Governance Indicators (WGI)",
+  "source_url": "https://databank.worldbank.org/source/worldwide-governance-indicators",
+  "download_url": "https://api.worldbank.org/v2/country/all/indicator/GOV_WGI_{PV,RQ}.EST?format=json&date=2023&per_page=400",
+  "license": "CC-BY-4.0",
+  "data_type": "observed (survey-based governance estimates), per-country, per-year",
+  "observed_or_synthetic": "observed",
+  "fields_used": "GOV_WGI_PV.EST (Political Stability), GOV_WGI_RQ.EST (Regulatory Quality), year=2023",
+  "fields_not_used": "Government Effectiveness, Rule of Law, Control of Corruption, Voice & Accountability (not mapped to our region schema)",
+  "transformations": "none at download time -- normalization to [0,1] risk happens in scripts/calibrate.py",
+  "access_date": "2026-09-03"
+}

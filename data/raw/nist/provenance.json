@@ -1,0 +1,12 @@
+{
+  "source_name": "NIST Sample Purchasing / Supply Chain Data",
+  "source_url": "https://catalog.data.gov/dataset/sample-purchasing-supply-chain-data",
+  "download_url": "https://data.nist.gov/od/ds/mds2-2183/Sample_Data_Sets.zip",
+  "license": "https://www.nist.gov/open/license (public)",
+  "data_type": "schema exemplar (5 toy SRM scenarios, suppliers/products/projects.csv)",
+  "observed_or_synthetic": "synthetic placeholder content (Lorem-Ipsum-style), real schema",
+  "fields_used": "supplier ID/name/location; product/BOM Level/Procurement Type/Supplier ID; project ID/Level hierarchy",
+  "fields_not_used": "contact name/email/phone, website (no modeling value)",
+  "transformations": "none (used only for schema/structural comparison, not literal values -- see DATASET_DESIGN_REVIEW.md \u00a73.1)",
+  "access_date": "2026-09-03"
+}

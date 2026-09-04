@@ -1,0 +1,13 @@
+{
+  "source_name": "INFORM Risk Index",
+  "source_url": "https://drmkc.jrc.ec.europa.eu/inform-index/INFORM-Risk/Results-and-data",
+  "download_url": "https://drmkc.jrc.ec.europa.eu/inform-index/Portals/0/InfoRM/2026/INFORM_Risk_Mid_2026_v073.xlsx",
+  "license": "CC-BY-4.0",
+  "data_type": "composite index (hazard/exposure, vulnerability, lack of coping capacity), per-country",
+  "observed_or_synthetic": "observed/modeled composite index",
+  "fields_used": "'Natural' (Hazard & Exposure), 'Infrastructure' (Lack of Coping Capacity), from sheet 'INFORM Risk 2026 (a-z)'",
+  "fields_not_used": "Human hazard/conflict, Vulnerability, Institutional/DRR/Governance/Communication sub-scores (not mapped to our region schema)",
+  "transformations": "none at download time -- normalization to [0,1] risk happens in scripts/calibrate.py",
+  "version": "Mid 2026 (v073)",
+  "access_date": "2026-09-03"
+}

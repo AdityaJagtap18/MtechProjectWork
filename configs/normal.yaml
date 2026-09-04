@@ -1,0 +1,38 @@
+# Plan §25 Dataset A ("Normal" -- no major disruption) and the §41 pipeline
+# entry point `scripts/generate_normal.py --config configs/normal.yaml`.
+#
+# Identical to base.yaml for now: there's no event engine yet (Phase 5), so
+# every scenario is currently "normal." Once black-swan events exist, this
+# file is what stays event-free while black_swan.yaml/experiments.yaml turn
+# events on -- kept as its own file now so the §41 command works as written
+# and so this scenario's config can diverge later without touching base.yaml.
+
+seed: 42
+
+network:
+  suppliers: 300
+  procurement_orders: 2000
+  materials: 100
+  plants: 50
+  products: 200
+  regions: 20
+
+topology:
+  p_single_source_material: 0.3
+  multi_source_min: 2
+  multi_source_max: 5
+  same_industry_bias: 0.8
+  materials_per_plant_min: 5
+  materials_per_plant_max: 20
+  home_region_bias: 0.7
+
+simulation:
+  horizon_periods: 104
+  periods_per_year: 52
+  days_per_period: 7
+  demand_seasonal_amplitude: 0.3
+  demand_drift_std: 0.05
+  initial_inventory_periods: 4.0
+  reorder_threshold_periods: 1.5
+  replenishment_multiplier: 2.0
+  supplier_capacity_headroom: 1.5

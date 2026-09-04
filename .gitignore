@@ -1,0 +1,17 @@
+__pycache__/
+*.pyc
+.DS_Store
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+.pytest_cache/
+# data/raw/ is intentionally tracked: small, CC-BY/public-domain external
+# reference data (NIST, WGI, INFORM) with provenance.json alongside it --
+# see DATASET_DESIGN_REVIEW.md. Everything derived from it is regenerable
+# and stays ignored.
+data/processed/
+data/generated/
+data/benchmark/

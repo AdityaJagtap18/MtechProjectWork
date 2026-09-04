@@ -1,0 +1,34 @@
+# Topology (Phase 2) and normal-operations simulation (Phase 3) config
+# (plan §8, §38). Sizes match the plan's recommended baseline (§8); every
+# generator/ and operations/ module reads these instead of hard-coding
+# counts.
+
+seed: 42
+
+network:
+  suppliers: 300
+  procurement_orders: 2000
+  materials: 100
+  plants: 50
+  products: 200
+  regions: 20
+
+topology:
+  p_single_source_material: 0.3
+  multi_source_min: 2
+  multi_source_max: 5
+  same_industry_bias: 0.8
+  materials_per_plant_min: 5
+  materials_per_plant_max: 20
+  home_region_bias: 0.7
+
+simulation:
+  horizon_periods: 104   # ~2 simulated years at weekly resolution (plan §10)
+  periods_per_year: 52
+  days_per_period: 7
+  demand_seasonal_amplitude: 0.3
+  demand_drift_std: 0.05
+  initial_inventory_periods: 4.0
+  reorder_threshold_periods: 1.5
+  replenishment_multiplier: 2.0
+  supplier_capacity_headroom: 1.5
