@@ -34,8 +34,15 @@ from scm_dataset.modeling.pipeline import prepare
 from scm_dataset.modeling.train import class_balance_summary, train_graphsage
 
 
+def _strategy_tag(config) -> str:
+    # Keeps existing "temporal" run directory names unchanged; distinguishes
+    # severity/scenario generalization runs so they don't read as more
+    # temporal-split runs once both kinds accumulate side by side.
+    return "" if config.split.strategy == "temporal" else f"_{config.split.strategy}"
+
+
 def _save_graphsage_run(prepared, train_result, eval_result, config, seed: int) -> str:
-    run_dir = new_run_dir(config.experiment.output_dir, f"hetero_graphsage_seed{seed}")
+    run_dir = new_run_dir(config.experiment.output_dir, f"hetero_graphsage{_strategy_tag(config)}_seed{seed}")
     save_config(run_dir, config)
 
     import torch
@@ -76,7 +83,8 @@ def _save_graphsage_run(prepared, train_result, eval_result, config, seed: int) 
 
 
 def _save_baseline_run(name: str, result, prepared, config) -> str:
-    run_dir = new_run_dir(config.experiment.output_dir, name)
+    tag = name if config.split.strategy == "temporal" else f"{name}_{config.split.strategy}"
+    run_dir = new_run_dir(config.experiment.output_dir, tag)
     save_config(run_dir, config)
     result.predictions.to_csv(os.path.join(run_dir, "predictions.csv"), index=False)
     write_json(os.path.join(run_dir, "metrics.json"), {"threshold": result.threshold, "by_split": result.metrics_by_split})
