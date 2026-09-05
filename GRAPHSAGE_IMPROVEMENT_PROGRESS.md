@@ -109,30 +109,54 @@ with every training run in the sweep showing validation loss rising while
 training loss keeps falling (classic overfitting). This is a real,
 usable finding, just not the fresh-onset finding the sweep set out to get.
 
-### Actual next step
-Rerun the three non-degenerate modes against the **severity** split,
-which has fresh onsets to actually measure against:
+### Done — the severity-split rerun, and a definitive answer to Q2
 
-```bash
-.venv/bin/python scripts/run_graphsage_experiment.py --config configs/graphsage_severity.yaml --feature-mode dynamic_only --seeds 42,43,44,45,46
-.venv/bin/python scripts/run_graphsage_experiment.py --config configs/graphsage_severity.yaml --feature-mode static_only --seeds 42,43,44,45,46
-.venv/bin/python scripts/run_graphsage_experiment.py --config configs/graphsage_severity.yaml --feature-mode region_risk_only --seeds 42,43,44,45,46
-# "full" (severity) already exists from the prior phase -- no need to rerun.
-# static_plus_graph is not worth rerunning -- see "Problem 2" above.
-```
+All three non-degenerate modes were run against the **severity** split
+(5 seeds each). Result, test split, mean over 5 seeds
+(`experiments/classical_gnn/ablation_matrix_severity.md`):
 
-Watch the console output for the `WARNING: ... likely time-invariant`
-line — if any of these three unexpectedly trip it too, stop and
-investigate before trusting the numbers, the same way `static_plus_graph`
-was caught.
+| Model/Input | Overall PR-AUC | Overall ROC-AUC | Fresh-Onset PR-AUC | Fresh-Onset ROC-AUC | Fresh-Onset Recall |
+|---|---:|---:|---:|---:|---:|
+| Dynamic-only GraphSAGE | 0.3644 | 0.6646 | 0.0069 | 0.4576 | 0.0000 |
+| Static-only GraphSAGE | 0.4580 | 0.7441 | 0.0057 | 0.3437 | 0.0000 |
+| Region/Risk-only GraphSAGE | 0.3736 | 0.6844 | 0.0060 | 0.3706 | 0.0000 |
+| Full GraphSAGE | 0.4487 | 0.7275 | n/a* | n/a* | 0.0000 |
 
-**What this will actually answer** (plan §2 Q1/Q2): whether
-`region_risk_only` recovers ANY fresh-onset ranking signal above chance —
-the direct, cheap test of whether background risk exposure alone can hint
-at an upcoming disruption before any operational symptom appears, which
-the prior phase's one-off manual check (ROC-AUC ~0.41–0.53 on the full
-model) left unresolved as to whether the signal exists but is unused, or
-genuinely doesn't exist.
+*Full's fresh-onset ranking columns weren't recomputed after the metric
+was added; recall (0.0) was already present and is consistent with the
+other three.
+
+**Q2 is now answered, definitively and negatively.** Fresh-onset recall
+is exactly 0.0000 for every feature group tested. More tellingly,
+fresh-onset ROC-AUC is *below 0.5* (worse than a coin flip) in all three —
+0.66, 0.34, 0.37 — and fresh-onset PR-AUC (0.006-0.007) sits *below* the
+subset's own base rate (84 fresh onsets / 10,367 negatives+fresh ≈ 0.008),
+meaning the models don't just fail to find signal, they rank fresh onsets
+as *less* likely than an average negative. This holds even for
+`region_risk_only` — the one channel (background geopolitical/disaster/
+cyber exposure) that could in principle carry a persistent risk signal
+independent of any operational symptom. It does not, on this benchmark,
+under this target/horizon/split.
+
+Per the plan's own §18 decision tree ("Static/structural signal exists?
+NO -> Do not force early-warning claims") and §24's language rules, the
+defensible statement is: **this benchmark provides no evidence of
+pre-event predictive signal for a fresh disruption onset, across dynamic
+operational history, static supplier attributes, and background risk
+exposure alike.** This is consistent with (and now much more rigorously
+supported than) the earlier finding that the event engine applies its
+effects as a hard step function with zero pre-onset ramp — there may
+simply be nothing in this benchmark's data-generating process to learn a
+genuine forward precursor from, regardless of feature engineering.
+
+A plausible additional factor (not yet verified) for *why* ranking goes
+*below* chance rather than merely flat: `pos_weight`-driven training may
+concentrate the model's "risk" mass specifically on the small, identifiable
+set of suppliers it has seen disrupted, at the expense of assigning
+elevated risk to anyone else — a miscalibration on the "calm" population
+rather than genuine anti-correlation with real risk. Not confirmed; would
+need a dedicated calibration check (Phase H) to distinguish from "no
+signal exists at all."
 
 ## Not started (plan §19 priorities 3-8)
 
