@@ -30,11 +30,17 @@ class FeaturesConfig:
 
 @dataclass
 class SplitConfig:
-    strategy: str = "temporal"  # temporal | scenario | severity
+    # temporal | scenario | severity. For "scenario"/"severity", the held-out
+    # event type(s)/severity threshold are NOT configured here -- they were
+    # already fixed when the benchmark's own splits/{scenario,severity}_split.csv
+    # were generated (see scripts/build_benchmark.py's SCENARIO_SPLIT_TEST_TYPES
+    # and severity_split()'s train_max_severity default). This modeling stage
+    # reads those files as-is (plan §27/§30: "use the existing benchmark split
+    # files ... do not modify the scenario split merely to improve results"),
+    # it does not re-derive a split from events.csv with its own parameters.
+    strategy: str = "temporal"
     train_frac: float = 0.7
     val_frac: float = 0.15
-    scenario_test_event_types: list[str] = field(default_factory=lambda: ["cyberattack"])
-    severity_train_max: int = 3
     generalization_val_frac: float = 0.15
 
 
