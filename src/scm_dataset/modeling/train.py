@@ -149,10 +149,12 @@ def train_graphsage(prepared: PreparedData, seed: int, verbose: bool = True) -> 
                 loss = loss_fn(logits, target)
                 val_loss_sum += loss.item() * len(target)
                 val_n += len(target)
-                val_logit_chunks.append(logits.numpy())
+                val_logit_chunks.append(logits)
                 val_target_chunks.append(target.numpy())
             val_loss = val_loss_sum / val_n
-            val_probs = 1.0 / (1.0 + np.exp(-np.concatenate(val_logit_chunks)))
+            # torch.sigmoid (not a manual 1/(1+exp(-x))) avoids overflow
+            # warnings/instability for large-magnitude logits.
+            val_probs = torch.sigmoid(torch.cat(val_logit_chunks)).numpy()
             val_targets = np.concatenate(val_target_chunks)
             val_metrics = compute_classification_metrics(val_targets, val_probs, threshold=0.5)
 
