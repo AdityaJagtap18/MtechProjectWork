@@ -53,6 +53,7 @@ def _save_graphsage_run(prepared, train_result, eval_result, config, seed: int) 
     eval_result.predictions.to_csv(os.path.join(run_dir, "predictions.csv"), index=False)
     eval_result.risk_ranking.to_csv(os.path.join(run_dir, "supplier_risk_ranking.csv"), index=False)
     eval_result.warning_times.to_csv(os.path.join(run_dir, "early_warning.csv"), index=False)
+    write_json(os.path.join(run_dir, "onset_breakdown.json"), eval_result.onset_breakdown)
     train_result.history.to_csv(os.path.join(run_dir, "training_history.csv"), index=False)
 
     test_metrics = eval_result.metrics_by_split.get("test", {})

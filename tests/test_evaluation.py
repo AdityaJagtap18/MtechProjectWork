@@ -8,7 +8,13 @@ import pandas as pd
 import pytest
 
 from scm_dataset.modeling.calibration import compute_calibration, expected_calibration_error
-from scm_dataset.modeling.evaluate import build_risk_ranking, compute_warning_times, evaluate_experiment, generate_predictions
+from scm_dataset.modeling.evaluate import (
+    build_risk_ranking,
+    compute_warning_times,
+    disruption_onset_breakdown,
+    evaluate_experiment,
+    generate_predictions,
+)
 from scm_dataset.modeling.graphsage import build_model
 from scm_dataset.modeling.metrics import compute_classification_metrics, select_threshold
 
@@ -205,3 +211,56 @@ def test_warning_times_reports_none_when_never_warned():
     warnings = compute_warning_times(predictions, raw_labels, horizon_periods=4)
     row = warnings.iloc[0]
     assert row.first_warning_time is None or (isinstance(row.first_warning_time, float) and np.isnan(row.first_warning_time))
+
+
+# ---- disruption_onset_breakdown ----
+# Added after discovering, on the real severity-generalization run, that
+# recall was bit-identical across 5 independent seeds -- it turned out
+# every seed caught the exact same already-ongoing-disruption examples and
+# missed every genuinely fresh onset. This distinguishes "detecting a
+# disruption already in progress" from "warning before one starts."
+
+
+def test_onset_breakdown_separates_fresh_onset_from_already_ongoing_recall():
+    predictions = pd.DataFrame(
+        {
+            "supplier_id": ["s0", "s1", "s2", "s3"],
+            "time": [10, 10, 10, 10],
+            "actual_disruption": [1, 1, 1, 0],
+            "predicted_disruption": [1, 0, 1, 0],
+            "split": ["test"] * 4,
+        }
+    )
+    # s0: disrupted already at t=10 and caught. s1: disrupted already at
+    # t=10 but missed. s2: NOT yet disrupted at t=10 (fresh onset ahead)
+    # and caught. s3: negative example, irrelevant here.
+    raw_labels = pd.DataFrame(
+        {
+            "supplier_id": ["s0", "s1", "s2", "s3"],
+            "time": [10, 10, 10, 10],
+            "supplier_disrupted": [1, 1, 0, 0],
+        }
+    )
+    breakdown = disruption_onset_breakdown(predictions, raw_labels)
+    test = breakdown["test"]
+    assert test["n_positive"] == 3
+    assert test["n_already_ongoing"] == 2
+    assert test["n_fresh_onset"] == 1
+    assert test["recall_already_ongoing"] == pytest.approx(0.5)  # s0 caught, s1 missed
+    assert test["recall_fresh_onset"] == pytest.approx(1.0)  # s2 caught
+
+
+def test_onset_breakdown_omits_splits_with_no_positives():
+    predictions = pd.DataFrame(
+        {"supplier_id": ["s0"], "time": [0], "actual_disruption": [0], "predicted_disruption": [0], "split": ["train"]}
+    )
+    raw_labels = pd.DataFrame({"supplier_id": ["s0"], "time": [0], "supplier_disrupted": [0]})
+    assert disruption_onset_breakdown(predictions, raw_labels) == {}
+
+
+def test_evaluate_experiment_includes_onset_breakdown(tiny_prepared_data):
+    model = _tiny_model(tiny_prepared_data)
+    result = evaluate_experiment(model, tiny_prepared_data, tiny_prepared_data.config.threshold)
+    assert isinstance(result.onset_breakdown, dict)
+    for split, stats in result.onset_breakdown.items():
+        assert stats["n_fresh_onset"] + stats["n_already_ongoing"] == stats["n_positive"]

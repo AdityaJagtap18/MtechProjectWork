@@ -48,6 +48,7 @@ def main() -> None:
     eval_result.predictions.to_csv(os.path.join(args.run_dir, "predictions.csv"), index=False)
     eval_result.risk_ranking.to_csv(os.path.join(args.run_dir, "supplier_risk_ranking.csv"), index=False)
     eval_result.warning_times.to_csv(os.path.join(args.run_dir, "early_warning.csv"), index=False)
+    write_json(os.path.join(args.run_dir, "onset_breakdown.json"), eval_result.onset_breakdown)
     write_json(os.path.join(args.run_dir, "metrics.json"), {
         "threshold_policy": eval_result.threshold_policy, "threshold": eval_result.threshold,
         "by_split": eval_result.metrics_by_split,

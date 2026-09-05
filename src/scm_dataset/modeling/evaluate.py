@@ -129,6 +129,52 @@ def compute_warning_times(predictions: pd.DataFrame, raw_supplier_labels: pd.Dat
     return pd.DataFrame(rows)
 
 
+def disruption_onset_breakdown(predictions: pd.DataFrame, raw_supplier_labels: pd.DataFrame) -> dict:
+    """Splits every actual-positive example into two very different cases
+    and reports recall separately for each, per split:
+
+    - "already ongoing": `supplier_disrupted[t] == 1` -- the supplier is
+      already visibly disrupted at the prediction time itself, so the
+      target window's positive label mostly reflects the same disruption
+      persisting, not a new one appearing. Legitimate dynamic features
+      (e.g. a collapsing `fulfillment_ratio`) can make this easy to detect
+      without any leakage -- it just isn't early warning of anything new.
+    - "fresh onset": `supplier_disrupted[t] == 0` -- nothing is visibly
+      wrong yet at `t`; a positive prediction here is a genuine advance
+      warning of a disruption that hasn't started.
+
+    A blended recall/PR-AUC over "actual_disruption" can look strong while
+    recall on fresh onsets alone is near zero -- this was found by hand
+    while investigating why the severity-generalization run's recall was
+    bit-identical across 5 independent seeds (it turned out to be catching
+    the exact same 360 already-ongoing examples every time, and zero of
+    the 84 fresh onsets in every seed). Surfacing it as a real, saved
+    metric rather than a one-off check."""
+    raw_lookup = raw_supplier_labels.set_index(["supplier_id", "time"])["supplier_disrupted"]
+    positives = predictions[predictions["actual_disruption"] == 1].copy()
+    if positives.empty:
+        return {}
+    positives["already_disrupted_at_t"] = [
+        int(raw_lookup.get((sid, t), 0)) for sid, t in zip(positives["supplier_id"], positives["time"])
+    ]
+
+    result = {}
+    for split in SPLITS:
+        sub = positives[positives["split"] == split]
+        if sub.empty:
+            continue
+        fresh = sub[sub["already_disrupted_at_t"] == 0]
+        ongoing = sub[sub["already_disrupted_at_t"] == 1]
+        result[split] = {
+            "n_positive": int(len(sub)),
+            "n_fresh_onset": int(len(fresh)),
+            "n_already_ongoing": int(len(ongoing)),
+            "recall_fresh_onset": float(fresh["predicted_disruption"].mean()) if len(fresh) else None,
+            "recall_already_ongoing": float(ongoing["predicted_disruption"].mean()) if len(ongoing) else None,
+        }
+    return result
+
+
 @dataclass
 class EvaluationResult:
     predictions: pd.DataFrame
@@ -138,6 +184,7 @@ class EvaluationResult:
     calibration_by_split: dict
     risk_ranking: pd.DataFrame
     warning_times: pd.DataFrame
+    onset_breakdown: dict
 
 
 def evaluate_experiment(model: HeteroGraphSAGE, prepared: PreparedData, threshold_cfg: ThresholdConfig) -> EvaluationResult:
@@ -164,11 +211,12 @@ def evaluate_experiment(model: HeteroGraphSAGE, prepared: PreparedData, threshol
     supplier_context = build_supplier_context(prepared)
     risk_ranking = build_risk_ranking(predictions, threshold, supplier_context)
     warning_times = compute_warning_times(predictions, prepared.benchmark.labels["supplier"], prepared.config.prediction.horizon_periods)
+    onset_breakdown = disruption_onset_breakdown(predictions, prepared.benchmark.labels["supplier"])
 
     return EvaluationResult(
         predictions=predictions, threshold=threshold, threshold_policy=threshold_cfg.policy,
         metrics_by_split=metrics_by_split, calibration_by_split=calibration_by_split,
-        risk_ranking=risk_ranking, warning_times=warning_times,
+        risk_ranking=risk_ranking, warning_times=warning_times, onset_breakdown=onset_breakdown,
     )
 
 
