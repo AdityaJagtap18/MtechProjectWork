@@ -246,14 +246,11 @@ class EvaluationResult:
     temporal_variation: dict
 
 
-def evaluate_experiment(model: HeteroGraphSAGE, prepared: PreparedData, threshold_cfg: ThresholdConfig) -> EvaluationResult:
-    predictions = generate_predictions(model, prepared)
-
-    val = predictions[predictions["split"] == "validation"]
-    threshold = select_threshold(
-        val["actual_disruption"].values, val["risk_probability"].values,
-        policy=threshold_cfg.policy, value=threshold_cfg.value, target_value=threshold_cfg.target_value,
-    )
+def _finalize_evaluation(predictions: pd.DataFrame, threshold: float, threshold_policy: str, prepared: PreparedData) -> EvaluationResult:
+    """Shared tail of `evaluate_experiment` and `evaluate_on_target_dataset`:
+    everything that happens once a threshold is already decided.  Never
+    selects the threshold itself -- callers own that decision, so this
+    function has no way to accidentally read the wrong split's labels for it."""
     predictions = predictions.copy()
     predictions["predicted_disruption"] = (predictions["risk_probability"] >= threshold).astype(int)
 
@@ -274,10 +271,36 @@ def evaluate_experiment(model: HeteroGraphSAGE, prepared: PreparedData, threshol
     temporal_variation = temporal_variation_summary(predictions)
 
     return EvaluationResult(
-        predictions=predictions, threshold=threshold, threshold_policy=threshold_cfg.policy,
+        predictions=predictions, threshold=threshold, threshold_policy=threshold_policy,
         metrics_by_split=metrics_by_split, calibration_by_split=calibration_by_split,
         risk_ranking=risk_ranking, warning_times=warning_times, onset_breakdown=onset_breakdown,
         temporal_variation=temporal_variation,
+    )
+
+
+def evaluate_experiment(model: HeteroGraphSAGE, prepared: PreparedData, threshold_cfg: ThresholdConfig) -> EvaluationResult:
+    predictions = generate_predictions(model, prepared)
+    val = predictions[predictions["split"] == "validation"]
+    threshold = select_threshold(
+        val["actual_disruption"].values, val["risk_probability"].values,
+        policy=threshold_cfg.policy, value=threshold_cfg.value, target_value=threshold_cfg.target_value,
+    )
+    return _finalize_evaluation(predictions, threshold, threshold_cfg.policy, prepared)
+
+
+def evaluate_on_target_dataset(model: HeteroGraphSAGE, prepared_target: PreparedData, threshold: float) -> EvaluationResult:
+    """D2 -- true cross-dataset evaluation
+    (GRAPHSAGE_FINAL_GENERALIZATION_AND_IMPROVEMENT_PLAN.md): scores
+    `prepared_target` (built via `pipeline.prepare_for_cross_dataset_eval`,
+    every example already `split="test"`) with a model trained on a
+    DIFFERENT dataset, using a `threshold` already selected from that
+    OTHER dataset's own validation split (typically the `.threshold` from
+    an `evaluate_experiment` call on the source dataset). No target label
+    is ever used to choose the threshold, fit preprocessing, or select
+    anything about how the target is scored -- it is only ever scored."""
+    predictions = generate_predictions(model, prepared_target)
+    return _finalize_evaluation(
+        predictions, threshold, "external (selected on a different dataset's validation split)", prepared_target
     )
 
 

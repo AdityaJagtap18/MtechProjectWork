@@ -108,7 +108,11 @@ def test_run_graphsage_experiment_script_end_to_end(tiny_benchmark, tmp_path):
     )
     assert proc.returncode == 0, proc.stdout + proc.stderr
 
-    run_dirs = sorted(output_dir.glob("*hetero_graphsage_seed42"))
+    # "*hetero_graphsage*seed42" (not an exact suffix match): run directory
+    # names get an extra tag for a non-primary dataset id
+    # (scripts/run_graphsage_experiment.py::_strategy_tag), and this
+    # fixture's tiny benchmark isn't the primary scm_v1_black_swan_seed43.
+    run_dirs = sorted(output_dir.glob("*hetero_graphsage*seed42"))
     assert len(run_dirs) == 1, f"expected exactly one run dir, found {run_dirs}"
     run_dir = run_dirs[0]
 
@@ -135,8 +139,72 @@ def test_run_graphsage_experiment_script_end_to_end(tiny_benchmark, tmp_path):
     assert metadata["seed"] == 42
     assert metadata["prediction_horizon"] == 4
 
-    baseline_dirs = list(output_dir.glob("*majority_baseline")) + list(output_dir.glob("*logistic_regression_baseline"))
+    baseline_dirs = list(output_dir.glob("*majority_baseline*")) + list(output_dir.glob("*logistic_regression_baseline*"))
     assert len(baseline_dirs) == 2
     for baseline_dir in baseline_dirs:
         assert (baseline_dir / "predictions.csv").exists()
         assert (baseline_dir / "metrics.json").exists()
+
+
+def test_run_cross_dataset_experiment_script_end_to_end(tiny_benchmark, tiny_benchmark_b, tmp_path):
+    """D2 (GRAPHSAGE_FINAL_GENERALIZATION_AND_IMPROVEMENT_PLAN.md): trains
+    on one tiny benchmark, evaluates cross-dataset on a genuinely
+    different one, via the actual CLI script -- mirrors
+    test_run_graphsage_experiment_script_end_to_end's pattern for the
+    primary script."""
+    benchmark_root = tmp_path / "benchmark"
+    _write_benchmark_to_disk(tiny_benchmark, benchmark_root)
+    _write_benchmark_to_disk(tiny_benchmark_b, benchmark_root)
+
+    output_dir = tmp_path / "experiments"
+    config = {
+        "dataset": {"benchmark_path": str(benchmark_root), "dataset_id": tiny_benchmark.dataset_id},
+        "prediction": {"target": "supplier_disrupted", "horizon_periods": 4},
+        "features": {"rolling_windows": [4, 8], "min_history_periods": 12},
+        "split": {"strategy": "temporal", "train_frac": 0.7, "val_frac": 0.15},
+        "model": {"name": "hetero_graphsage", "hidden_dim": 8, "num_layers": 2, "dropout": 0.0, "aggregation": "mean"},
+        "training": {"epochs": 2, "learning_rate": 0.01, "weight_decay": 0.0001, "early_stopping_patience": 5, "class_weighting": "balanced"},
+        "threshold": {"policy": "fixed", "value": 0.5},
+        "experiment": {"output_dir": str(output_dir), "seeds": [42]},
+        "seed": 42,
+    }
+    config_path = tmp_path / "graphsage.yaml"
+    with open(config_path, "w") as f:
+        yaml.safe_dump(config, f)
+
+    proc = subprocess.run(
+        [
+            sys.executable, "scripts/run_cross_dataset_experiment.py",
+            "--config", str(config_path),
+            "--source-dataset-id", tiny_benchmark.dataset_id,
+            "--target-dataset-id", tiny_benchmark_b.dataset_id,
+            "--seeds", "42",
+        ],
+        cwd=str(REPO_ROOT), capture_output=True, text=True,
+    )
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+
+    run_dirs = list(output_dir.glob("*crossdataset*seed42"))
+    assert len(run_dirs) == 1, f"expected exactly one run dir, found {run_dirs}"
+    run_dir = run_dirs[0]
+
+    for prefix in ("within_seed", "cross_dataset"):
+        assert (run_dir / f"predictions_{prefix}.csv").exists()
+        assert (run_dir / f"metrics_{prefix}.json").exists()
+        assert (run_dir / f"onset_breakdown_{prefix}.json").exists()
+        assert (run_dir / f"calibration_{prefix}.json").exists()
+
+    cross_predictions = pd.read_csv(run_dir / "predictions_cross_dataset.csv")
+    assert (cross_predictions["split"] == "test").all()  # every target example is test, none train/validation
+    assert cross_predictions["risk_probability"].between(0.0, 1.0).all()
+
+    with open(run_dir / "run_metadata.json") as f:
+        metadata = json.load(f)
+    assert metadata["source_dataset_id"] == tiny_benchmark.dataset_id
+    assert metadata["target_dataset_id"] == tiny_benchmark_b.dataset_id
+    assert metadata["experiment_type"] == "D2_true_cross_dataset_generalization"
+
+    baseline_dirs = list(output_dir.glob("*crossdataset*baselines"))
+    assert len(baseline_dirs) == 1
+    for prefix in ("majority_within_seed", "majority_cross_dataset", "logreg_within_seed", "logreg_cross_dataset"):
+        assert (baseline_dirs[0] / f"metrics_{prefix}.json").exists()

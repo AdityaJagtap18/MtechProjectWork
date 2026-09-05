@@ -166,3 +166,51 @@ def prepare_from_benchmark(config: GraphSAGEConfig, benchmark: BenchmarkData, pr
         config=config, benchmark=benchmark, frames=frames, examples=examples,
         preprocessor=preprocessor, snapshot_builder=snapshot_builder,
     )
+
+
+def prepare_for_cross_dataset_eval(config: GraphSAGEConfig, target_benchmark: BenchmarkData, source_preprocessor: FeaturePreprocessor) -> PreparedData:
+    """D2 -- true cross-dataset evaluation
+    (GRAPHSAGE_FINAL_GENERALIZATION_AND_IMPROVEMENT_PLAN.md): builds a
+    `PreparedData` for `target_benchmark` using a `FeaturePreprocessor`
+    already fit on a DIFFERENT (source) dataset -- never refits, so
+    nothing about the target's own feature distribution ever influences
+    scaling/imputation/encoding.
+
+    Every example gets `split="test"`: the whole target dataset is unseen
+    from the trained model's perspective, not just its own temporal-test
+    tail. This is the precise distinction the plan draws between
+    "seed43 train -> seed44 test" (every period of seed44 is held out)
+    and "seed44 train -> seed44 test" (only seed44's own temporal-test
+    weeks are held out, which is within-seed replication, not cross-
+    dataset generalization).
+
+    Node identity cannot leak between datasets here: `HeteroGraphSnapshotBuilder`
+    builds its node id -> index maps from `target_benchmark.graph` alone
+    (see hetero_graph.py), and the model itself has no per-entity
+    parameters -- every learned weight is either per-node-type (input
+    projections) or per-relation (SAGEConv), so it is applicable to any
+    graph with the same feature dimensionality regardless of which
+    dataset's specific entities produced it."""
+    audit_feature_sources(target_benchmark.feature_audit)
+    _check_supplier_label_alignment(target_benchmark)
+
+    frames = build_feature_frames(
+        target_benchmark.graph, target_benchmark.operations, target_benchmark.horizon_periods, config.features.rolling_windows
+    )
+    frames = apply_feature_mode(frames, config.features.feature_mode)
+
+    examples = build_prediction_examples(
+        target_benchmark.labels["supplier"],
+        target_benchmark.horizon_periods,
+        config.features.min_history_periods,
+        config.prediction.horizon_periods,
+    )
+    examples = examples.copy()
+    examples["split"] = "test"
+
+    snapshot_builder = HeteroGraphSnapshotBuilder(target_benchmark.graph, source_preprocessor, frames)
+
+    return PreparedData(
+        config=config, benchmark=target_benchmark, frames=frames, examples=examples,
+        preprocessor=source_preprocessor, snapshot_builder=snapshot_builder,
+    )

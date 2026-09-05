@@ -34,14 +34,21 @@ from scm_dataset.modeling.pipeline import prepare
 from scm_dataset.modeling.train import class_balance_summary, train_graphsage
 
 
+_PRIMARY_DATASET_ID = "scm_v1_black_swan_seed43"
+
+
 def _strategy_tag(config) -> str:
-    # Keeps existing "temporal"/"full" run directory names unchanged;
-    # distinguishes severity/scenario generalization runs and feature-mode
-    # ablations (GRAPH_SAGE_IMPROVEMENT_PLAN.md §6) so they don't read as
-    # more primary runs once several kinds accumulate side by side.
+    # Keeps existing "temporal"/"full"/seed43 run directory names
+    # unchanged; distinguishes severity/scenario generalization runs,
+    # feature-mode ablations (GRAPH_SAGE_IMPROVEMENT_PLAN.md §6), and a
+    # non-primary dataset (D1's seed44 diagnostic,
+    # GRAPHSAGE_FINAL_GENERALIZATION_AND_IMPROVEMENT_PLAN.md) so they
+    # don't collide with or read as more primary runs once several kinds
+    # accumulate side by side.
     split_tag = "" if config.split.strategy == "temporal" else f"_{config.split.strategy}"
     feature_tag = "" if config.features.feature_mode == "full" else f"_{config.features.feature_mode}"
-    return split_tag + feature_tag
+    dataset_tag = "" if config.dataset.dataset_id == _PRIMARY_DATASET_ID else f"_{config.dataset.dataset_id.replace('scm_v1_black_swan_', '')}"
+    return split_tag + feature_tag + dataset_tag
 
 
 def _save_graphsage_run(prepared, train_result, eval_result, config, seed: int) -> str:
@@ -97,8 +104,7 @@ def _save_graphsage_run(prepared, train_result, eval_result, config, seed: int) 
 
 
 def _save_baseline_run(name: str, result, prepared, config) -> str:
-    tag = name if config.split.strategy == "temporal" else f"{name}_{config.split.strategy}"
-    run_dir = new_run_dir(config.experiment.output_dir, tag)
+    run_dir = new_run_dir(config.experiment.output_dir, f"{name}{_strategy_tag(config)}")
     save_config(run_dir, config)
     result.predictions.to_csv(os.path.join(run_dir, "predictions.csv"), index=False)
     write_json(os.path.join(run_dir, "metrics.json"), {"threshold": result.threshold, "by_split": result.metrics_by_split})
@@ -125,11 +131,17 @@ def main() -> None:
         choices=["full", "dynamic_only", "static_only", "region_risk_only", "static_plus_graph"],
         help="Override config's features.feature_mode (GRAPH_SAGE_IMPROVEMENT_PLAN.md Phase B ablations).",
     )
+    parser.add_argument(
+        "--dataset-id", default=None,
+        help="Override config's dataset.dataset_id (e.g. scm_v1_black_swan_seed44 for the D1 within-seed44 diagnostic in GRAPHSAGE_FINAL_GENERALIZATION_AND_IMPROVEMENT_PLAN.md).",
+    )
     args = parser.parse_args()
 
     config = load_config(args.config)
     if args.feature_mode:
         config.features.feature_mode = args.feature_mode
+    if args.dataset_id:
+        config.dataset.dataset_id = args.dataset_id
     if args.seeds:
         seeds = [int(s) for s in args.seeds.split(",")]
     elif args.all_seeds:

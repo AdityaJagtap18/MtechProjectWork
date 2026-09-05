@@ -58,9 +58,9 @@ def make_tiny_config(**overrides) -> GraphSAGEConfig:
     return config
 
 
-def build_tiny_benchmark() -> BenchmarkData:
+def build_tiny_benchmark(seed: int = TINY_SEED, dataset_id: str = "tiny_test") -> BenchmarkData:
     gen_config = GeneratorConfig(
-        seed=TINY_SEED,
+        seed=seed,
         network=NetworkConfig(suppliers=20, procurement_orders=80, materials=10, plants=5, products=10, regions=3),
         simulation=SimulationConfig(horizon_periods=TINY_HORIZON),
         events=EventsConfig(
@@ -95,7 +95,7 @@ def build_tiny_benchmark() -> BenchmarkData:
     }
 
     return BenchmarkData(
-        dataset_id="tiny_test",
+        dataset_id=dataset_id,
         dataset_dir="<in-memory, no disk path>",
         graph=graph,
         operations=operations,
@@ -115,6 +115,14 @@ def _df(records: list[dict]):
 @pytest.fixture(scope="session")
 def tiny_benchmark() -> BenchmarkData:
     return build_tiny_benchmark()
+
+
+@pytest.fixture(scope="session")
+def tiny_benchmark_b() -> BenchmarkData:
+    """A second, independently-generated tiny benchmark (different
+    dataset seed) -- for D2 cross-dataset tests, which need two genuinely
+    different datasets sharing the same schema, the way seed43/seed44 do."""
+    return build_tiny_benchmark(seed=TINY_SEED + 1, dataset_id="tiny_test_b")
 
 
 @pytest.fixture
