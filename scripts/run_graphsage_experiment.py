@@ -138,7 +138,8 @@ def main() -> None:
             values = [m[key] for m in test_metrics_by_seed if m.get(key) is not None]
             if values:
                 summary[key] = {"mean": float(np.mean(values)), "std": float(np.std(values)), "n_seeds": len(values)}
-        summary_path = os.path.join(config.experiment.output_dir, f"multiseed_summary_seeds_{'-'.join(str(s) for s in seeds)}.json")
+        summary_name = f"multiseed_summary{_strategy_tag(config)}_seeds_{'-'.join(str(s) for s in seeds)}.json"
+        summary_path = os.path.join(config.experiment.output_dir, summary_name)
         write_json(summary_path, {"seeds": seeds, "test_metrics": summary})
         print(f"\nMulti-seed test summary (mean +/- std over {len(seeds)} seeds) -> {summary_path}")
         for key, stats in summary.items():

@@ -19,17 +19,48 @@ is compared against under the same protocol (plan §71/§72).
 | Logistic Regression | 0.304 | 0.821 | 0.181 | 0.632 | 0.282 | 0.145 |
 | **GraphSAGE (mean ± std, 5 seeds)** | **0.807 ± 0.066** | **0.987 ± 0.008** | **0.522 ± 0.042** | **0.968 ± 0.016** | **0.677 ± 0.035** | **0.042 ± 0.012** |
 
-Full narrative (dataset, features, architecture, split, calibration, early
-warning, limitations, reproducibility check) in
+**Read this recall carefully — it is not early warning.** Splitting
+test-positive examples by whether the supplier was already visibly
+disrupted at the prediction time (`evaluate.py::disruption_onset_breakdown`,
+`onset_breakdown.json`) shows this run's test split contains *zero* fresh
+onsets — every positive is "an already-ongoing disruption persists," not
+"a new one starts." Checked on validation (which does have fresh onsets)
+and on the severity-generalization run's test split (84 fresh onsets):
+recall on genuinely new onsets is **exactly 0%** in both, with predicted
+probabilities indistinguishable from ordinary negatives (mean ~0.0000).
+This traces to the event engine's design (`events/base.py`: zero effect
+before an event's `start_time`, a step function not a ramp) — there is no
+operational precursor signal in this benchmark for any model to learn from
+the dynamic features alone. The model's real, measured capability is
+persistence detection (will a visible disruption still be active in H
+periods), which is genuinely useful but a different, easier claim than
+"early prediction of future supplier disruptions." Full investigation in
+the severity run's report (link below).
+
+Severity generalization (train severity 1-3, test 4-5,
+`configs/graphsage_severity.yaml`) reinforces this: PR-AUC drops to
+**0.449 ± 0.013**, and recall (0.4406, bit-identical across all 5 seeds —
+itself the finding that surfaced the persistence-vs-onset issue above) is
+entirely on already-ongoing cases.
+
+Full narrative in
 `experiments/classical_gnn/20260905T041715Z_hetero_graphsage_seed42/experiment_report.md`
-(the `experiments/` tree is gitignored — regenerable byte-for-byte by
-rerunning the command below with the same seed, which was verified: two
-independent seed-42 runs matched to 15 decimal digits).
+(temporal, primary) and
+`experiments/classical_gnn/20260905T043508Z_hetero_graphsage_severity_seed42/experiment_report.md`
+(severity generalization + the onset-breakdown investigation) — the
+`experiments/` tree is gitignored, regenerable byte-for-byte by rerunning
+the commands below (verified: two independent seed-42 runs matched to 15
+decimal digits).
 
 Reproduce with:
 ```bash
 .venv/bin/python scripts/run_graphsage_experiment.py \
     --config configs/graphsage.yaml --seeds 42,43,44,45,46 --baselines
+```
+Severity generalization:
+```bash
+.venv/bin/python scripts/run_graphsage_experiment.py \
+    --config configs/graphsage_severity.yaml --seeds 42,43,44,45,46
 ```
 
 ## Package layout
@@ -76,7 +107,7 @@ checkpoint, never builds a test-split snapshot), evaluation/metrics/
 calibration, and two integration tests (in-process, and a subprocess run of
 the actual CLI script against a tiny on-disk benchmark).
 
-**Full suite: 158/158 passing** (90 original dataset-framework tests + 68 new).
+**Full suite: 161/161 passing** (90 original dataset-framework tests + 71 new).
 
 ## Key decisions (documented in code, summarized here)
 
@@ -105,29 +136,46 @@ the actual CLI script against a tiny on-disk benchmark).
   one row per supplier x time).
 - Default 0.5 threshold gives high recall (~0.97) / moderate precision
   (~0.52) — a direct consequence of `class_weighting: balanced`'s
-  `pos_weight`, appropriate for an early-warning framing. A
-  validation-selected threshold policy (`f1_optimal` /
-  `precision_constrained` / `recall_constrained`) is implemented in
-  `metrics.select_threshold` and configurable via `configs/graphsage.yaml`'s
-  `threshold.policy` if a different operating point is wanted.
+  `pos_weight`. **This recall is on already-ongoing disruptions, not fresh
+  onsets — see the headline section above.** A validation-selected
+  threshold policy (`f1_optimal` / `precision_constrained` /
+  `recall_constrained`) is implemented in `metrics.select_threshold` and
+  configurable via `configs/graphsage.yaml`'s `threshold.policy`, but no
+  threshold choice recovers fresh-onset recall here — those examples get
+  ~0.0000 predicted probability, not merely a sub-threshold one.
+- `evaluate.py::disruption_onset_breakdown` (`onset_breakdown.json` per
+  run): splits actual-positive examples by whether the supplier was
+  already disrupted at the prediction time vs. a fresh onset still ahead,
+  reporting recall separately for each. Added after discovering the
+  severity run's recall was bit-identical across 5 seeds (same 360
+  examples caught every time, zero fresh onsets ever caught) — see the
+  headline section.
 
 ## Not yet done (all optional next steps, not blockers)
 
 The plan explicitly sequences these *after* a stable single/multi-seed
-run (§70/§77) — none were required for "definition of done," and none are
-started yet:
+run (§70/§77) — none were required for "definition of done":
 
-1. **Severity generalization experiment** (plan §29/§39): copy
-   `configs/graphsage.yaml`, set `split.strategy: severity`, rerun. Tests
-   whether a model trained mostly on severity 1-3 events generalizes to
-   held-out severity 4-5 periods.
-2. **Scenario generalization experiment** (plan §30/§40): same, with
-   `split.strategy: scenario` (default held-out type: cyberattack).
-3. **Ablations B-E** (plan §55/§58) — static-only, dynamic-only, remove
+1. **Scenario generalization experiment** (plan §30/§40): copy
+   `configs/graphsage_severity.yaml` -> `configs/graphsage_scenario.yaml`,
+   set `split.strategy: scenario` (held-out types are fixed by the
+   benchmark's own `scenario_split.csv` — {cyberattack, geopolitical}, see
+   `configs/graphsage.yaml`'s split comment). Given the persistence-vs-
+   fresh-onset finding above, worth checking the onset breakdown here too
+   rather than trusting blended recall.
+2. **Ablations B-E** (plan §55/§58) — static-only, dynamic-only, remove
    region risk, single- vs multi-source. Ablation A (no graph) is already
    covered by the Logistic Regression baseline.
-4. A robustness rerun against `scm_v1_black_swan_seed44` (higher 6.1%
+3. A robustness rerun against `scm_v1_black_swan_seed44` (higher 6.1%
    positive rate, 9 events) by changing `configs/graphsage.yaml`'s
    `dataset.dataset_id`.
+4. Investigating whether *any* input (static risk-exposure features, a
+   longer horizon, a different target definition) can give the model
+   above-chance signal on fresh onsets at all, given the event engine's
+   step-function design suggests dynamic operational features fundamentally
+   can't. This is a question about what's achievable on this benchmark, not
+   just about GraphSAGE.
 5. Once the above are judged sufficient, freeze this configuration
-   explicitly (plan §80) before starting the QGNN stage.
+   explicitly (plan §80) before starting the QGNN stage — and carry the
+   onset-breakdown check into that comparison's protocol (plan §72), not
+   just the blended metrics.
