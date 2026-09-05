@@ -198,6 +198,41 @@ def disruption_onset_breakdown(predictions: pd.DataFrame, raw_supplier_labels: p
     return result
 
 
+def temporal_variation_summary(predictions: pd.DataFrame) -> dict:
+    """Per split, the fraction of suppliers whose `risk_probability` takes
+    more than one distinct value across their prediction times.
+
+    Found necessary by hand while investigating GRAPH_SAGE_IMPROVEMENT_PLAN.md's
+    "static_plus_graph" feature-mode ablation scoring *higher* than the full
+    model with exactly zero variance across 5 independently-seeded runs: it
+    turned out every one of the 300 suppliers got the identical
+    `risk_probability` at every one of its ~89 prediction times. Once every
+    node type in the graph is restricted to static-only features, nothing
+    in the model's input differs from one week to the next -- there is no
+    week-index feature standing in for time -- so the model can only ever
+    learn a fixed per-supplier score, not a temporal prediction. That fixed
+    score can still score very well on a test window dominated by one
+    long-running event (rewarding "is this one of the ~11 historically
+    troubled suppliers"), which is exactly the kind of result that looks
+    like a genuine finding about structural signal but is actually an
+    artifact of removing every trace of time from the inputs. This function
+    makes that degenerate case detectable automatically on every future run
+    (any feature_mode, not just static_plus_graph) instead of requiring a
+    manual investigation each time it recurs."""
+    result = {}
+    for split in SPLITS:
+        sub = predictions[predictions["split"] == split]
+        if sub.empty:
+            continue
+        variation = sub.groupby("supplier_id")["risk_probability"].nunique()
+        result[split] = {
+            "n_suppliers": int(len(variation)),
+            "n_suppliers_with_time_variation": int((variation > 1).sum()),
+            "fraction_time_varying": float((variation > 1).mean()) if len(variation) else None,
+        }
+    return result
+
+
 @dataclass
 class EvaluationResult:
     predictions: pd.DataFrame
@@ -208,6 +243,7 @@ class EvaluationResult:
     risk_ranking: pd.DataFrame
     warning_times: pd.DataFrame
     onset_breakdown: dict
+    temporal_variation: dict
 
 
 def evaluate_experiment(model: HeteroGraphSAGE, prepared: PreparedData, threshold_cfg: ThresholdConfig) -> EvaluationResult:
@@ -235,11 +271,13 @@ def evaluate_experiment(model: HeteroGraphSAGE, prepared: PreparedData, threshol
     risk_ranking = build_risk_ranking(predictions, threshold, supplier_context)
     warning_times = compute_warning_times(predictions, prepared.benchmark.labels["supplier"], prepared.config.prediction.horizon_periods)
     onset_breakdown = disruption_onset_breakdown(predictions, prepared.benchmark.labels["supplier"])
+    temporal_variation = temporal_variation_summary(predictions)
 
     return EvaluationResult(
         predictions=predictions, threshold=threshold, threshold_policy=threshold_cfg.policy,
         metrics_by_split=metrics_by_split, calibration_by_split=calibration_by_split,
         risk_ranking=risk_ranking, warning_times=warning_times, onset_breakdown=onset_breakdown,
+        temporal_variation=temporal_variation,
     )
 
 

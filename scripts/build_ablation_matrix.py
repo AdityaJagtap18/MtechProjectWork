@@ -25,7 +25,16 @@ import os
 import numpy as np
 import pandas as pd
 
-COLUMNS = ["Model/Input", "n_runs", "Overall PR-AUC", "Overall ROC-AUC", "Fresh-Onset PR-AUC", "Fresh-Onset ROC-AUC", "Fresh-Onset Recall", "Already-Ongoing Recall"]
+COLUMNS = [
+    "Model/Input", "n_runs", "Overall PR-AUC", "Overall ROC-AUC", "Fresh-Onset PR-AUC", "Fresh-Onset ROC-AUC",
+    "Fresh-Onset Recall", "Already-Ongoing Recall", "Fraction Time-Varying",
+]
+
+# Below this, a row's score plausibly reflects a fixed per-supplier score
+# rather than a genuine temporal prediction (evaluate.py::
+# temporal_variation_summary) -- flagged in the table rather than requiring
+# a separate manual check every time this recurs.
+TIME_INVARIANT_WARNING_THRESHOLD = 0.5
 
 
 def _load_run(run_dir: str) -> dict:
@@ -40,6 +49,13 @@ def _load_run(run_dir: str) -> dict:
             onset = json.load(f)
         onset_test = onset.get("test", {})
 
+    variation_path = os.path.join(run_dir, "temporal_variation.json")
+    variation_test = {}
+    if os.path.exists(variation_path):
+        with open(variation_path) as f:
+            variation = json.load(f)
+        variation_test = variation.get("test", {})
+
     return {
         "pr_auc": test_metrics.get("pr_auc"),
         "roc_auc": test_metrics.get("roc_auc"),
@@ -47,6 +63,7 @@ def _load_run(run_dir: str) -> dict:
         "roc_auc_fresh_onset": onset_test.get("roc_auc_fresh_onset"),
         "recall_fresh_onset": onset_test.get("recall_fresh_onset"),
         "recall_already_ongoing": onset_test.get("recall_already_ongoing"),
+        "fraction_time_varying": variation_test.get("fraction_time_varying"),
     }
 
 
@@ -63,9 +80,13 @@ def build_matrix(rows: list[tuple[str, list[str]]]) -> pd.DataFrame:
     records = []
     for label, run_dirs in rows:
         per_run = [_load_run(d) for d in run_dirs]
+        fraction_time_varying = _mean_or_none([r["fraction_time_varying"] for r in per_run])
+        display_label = label
+        if fraction_time_varying is not None and fraction_time_varying < TIME_INVARIANT_WARNING_THRESHOLD:
+            display_label = f"{label} [WARNING: likely time-invariant]"
         records.append(
             {
-                "Model/Input": label,
+                "Model/Input": display_label,
                 "n_runs": len(run_dirs),
                 "Overall PR-AUC": _mean_or_none([r["pr_auc"] for r in per_run]),
                 "Overall ROC-AUC": _mean_or_none([r["roc_auc"] for r in per_run]),
@@ -73,6 +94,7 @@ def build_matrix(rows: list[tuple[str, list[str]]]) -> pd.DataFrame:
                 "Fresh-Onset ROC-AUC": _mean_or_none([r["roc_auc_fresh_onset"] for r in per_run]),
                 "Fresh-Onset Recall": _mean_or_none([r["recall_fresh_onset"] for r in per_run]),
                 "Already-Ongoing Recall": _mean_or_none([r["recall_already_ongoing"] for r in per_run]),
+                "Fraction Time-Varying": fraction_time_varying,
             }
         )
     return pd.DataFrame(records, columns=COLUMNS)

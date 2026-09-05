@@ -13,7 +13,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 from build_ablation_matrix import _load_run, build_matrix, to_markdown  # noqa: E402
 
 
-def _make_run_dir(tmp_path: Path, name: str, test_metrics: dict, onset_test: dict | None) -> str:
+def _make_run_dir(tmp_path: Path, name: str, test_metrics: dict, onset_test: dict | None, variation_test: dict | None = None) -> str:
     run_dir = tmp_path / name
     run_dir.mkdir()
     with open(run_dir / "metrics.json", "w") as f:
@@ -21,6 +21,9 @@ def _make_run_dir(tmp_path: Path, name: str, test_metrics: dict, onset_test: dic
     if onset_test is not None:
         with open(run_dir / "onset_breakdown.json", "w") as f:
             json.dump({"test": onset_test}, f)
+    if variation_test is not None:
+        with open(run_dir / "temporal_variation.json", "w") as f:
+            json.dump({"test": variation_test}, f)
     return str(run_dir)
 
 
@@ -70,3 +73,32 @@ def test_to_markdown_produces_a_valid_looking_table(tmp_path):
     assert "Majority" in table
     assert "0.5000" in table
     assert "n/a" in table  # missing onset breakdown columns
+
+
+# ---- fraction_time_varying / time-invariance warning ----
+# Added after "static_plus_graph" scored higher than the full model with
+# zero cross-seed variance -- every supplier's risk_probability turned out
+# to be literally constant across time in that mode.
+
+
+def test_load_run_reads_fraction_time_varying(tmp_path):
+    run_dir = _make_run_dir(tmp_path, "run_a", {"pr_auc": 0.5, "roc_auc": 0.6}, None, variation_test={"fraction_time_varying": 0.9})
+    loaded = _load_run(run_dir)
+    assert loaded["fraction_time_varying"] == pytest.approx(0.9)
+
+
+def test_low_fraction_time_varying_flags_the_row_label(tmp_path):
+    run_dir = _make_run_dir(
+        tmp_path, "degenerate_run", {"pr_auc": 0.93, "roc_auc": 0.99}, None, variation_test={"fraction_time_varying": 0.0}
+    )
+    df = build_matrix([("Static + Graph Structure", [run_dir])])
+    assert "WARNING" in df.iloc[0]["Model/Input"]
+    assert df.iloc[0]["Fraction Time-Varying"] == pytest.approx(0.0)
+
+
+def test_high_fraction_time_varying_does_not_flag_the_row_label(tmp_path):
+    run_dir = _make_run_dir(
+        tmp_path, "normal_run", {"pr_auc": 0.8, "roc_auc": 0.98}, None, variation_test={"fraction_time_varying": 0.95}
+    )
+    df = build_matrix([("Full GraphSAGE", [run_dir])])
+    assert df.iloc[0]["Model/Input"] == "Full GraphSAGE"  # unchanged, no warning appended

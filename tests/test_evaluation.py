@@ -14,6 +14,7 @@ from scm_dataset.modeling.evaluate import (
     disruption_onset_breakdown,
     evaluate_experiment,
     generate_predictions,
+    temporal_variation_summary,
 )
 from scm_dataset.modeling.graphsage import build_model
 from scm_dataset.modeling.metrics import compute_classification_metrics, select_threshold
@@ -277,3 +278,57 @@ def test_evaluate_experiment_includes_onset_breakdown(tiny_prepared_data):
     assert isinstance(result.onset_breakdown, dict)
     for split, stats in result.onset_breakdown.items():
         assert stats["n_fresh_onset"] + stats["n_already_ongoing"] == stats["n_positive"]
+
+
+# ---- temporal_variation_summary ----
+# Added after discovering that GRAPH_SAGE_IMPROVEMENT_PLAN.md's
+# "static_plus_graph" feature mode strips every trace of time from the
+# graph, causing every supplier to get one fixed risk_probability for all
+# of its prediction times -- which then scored higher than the full model,
+# with zero cross-seed variance, because it happened to match a test
+# window dominated by one long-running event. This check makes that
+# degenerate case detectable automatically.
+
+
+def test_temporal_variation_detects_a_fully_time_invariant_supplier():
+    predictions = pd.DataFrame(
+        {
+            "supplier_id": ["s0", "s0", "s0", "s1", "s1", "s1"],
+            "time": [10, 11, 12, 10, 11, 12],
+            "risk_probability": [0.5, 0.5, 0.5, 0.1, 0.4, 0.9],  # s0 constant, s1 varies
+            "split": ["test"] * 6,
+        }
+    )
+    summary = temporal_variation_summary(predictions)
+    assert summary["test"]["n_suppliers"] == 2
+    assert summary["test"]["n_suppliers_with_time_variation"] == 1  # only s1
+    assert summary["test"]["fraction_time_varying"] == pytest.approx(0.5)
+
+
+def test_temporal_variation_all_varying_gives_fraction_one():
+    predictions = pd.DataFrame(
+        {
+            "supplier_id": ["s0", "s0", "s1", "s1"],
+            "time": [10, 11, 10, 11],
+            "risk_probability": [0.2, 0.3, 0.6, 0.7],
+            "split": ["test"] * 4,
+        }
+    )
+    summary = temporal_variation_summary(predictions)
+    assert summary["test"]["fraction_time_varying"] == pytest.approx(1.0)
+
+
+def test_temporal_variation_omits_empty_splits():
+    predictions = pd.DataFrame({"supplier_id": ["s0"], "time": [0], "risk_probability": [0.5], "split": ["train"]})
+    summary = temporal_variation_summary(predictions)
+    assert "test" not in summary
+    assert "validation" not in summary
+
+
+def test_evaluate_experiment_includes_temporal_variation(tiny_prepared_data):
+    model = _tiny_model(tiny_prepared_data)
+    result = evaluate_experiment(model, tiny_prepared_data, tiny_prepared_data.config.threshold)
+    assert isinstance(result.temporal_variation, dict)
+    for split, stats in result.temporal_variation.items():
+        assert 0.0 <= stats["fraction_time_varying"] <= 1.0
+        assert stats["n_suppliers_with_time_variation"] <= stats["n_suppliers"]

@@ -57,7 +57,17 @@ def _save_graphsage_run(prepared, train_result, eval_result, config, seed: int) 
     eval_result.risk_ranking.to_csv(os.path.join(run_dir, "supplier_risk_ranking.csv"), index=False)
     eval_result.warning_times.to_csv(os.path.join(run_dir, "early_warning.csv"), index=False)
     write_json(os.path.join(run_dir, "onset_breakdown.json"), eval_result.onset_breakdown)
+    write_json(os.path.join(run_dir, "temporal_variation.json"), eval_result.temporal_variation)
     train_result.history.to_csv(os.path.join(run_dir, "training_history.csv"), index=False)
+
+    test_variation = eval_result.temporal_variation.get("test", {})
+    if test_variation.get("fraction_time_varying") is not None and test_variation["fraction_time_varying"] < 0.5:
+        print(
+            f"  WARNING: only {test_variation['fraction_time_varying']:.0%} of test-split suppliers have a "
+            f"risk_probability that varies across their own prediction times -- this run may have degenerated "
+            f"into a fixed per-supplier score rather than a genuine temporal prediction (see "
+            f"evaluate.py::temporal_variation_summary's docstring for why feature_mode=static_plus_graph does this)."
+        )
 
     test_metrics = eval_result.metrics_by_split.get("test", {})
     write_json(os.path.join(run_dir, "metrics.json"), {
