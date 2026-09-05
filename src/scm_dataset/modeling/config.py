@@ -26,6 +26,11 @@ class PredictionConfig:
 class FeaturesConfig:
     rolling_windows: list[int] = field(default_factory=lambda: [4, 8, 12])
     min_history_periods: int = 12
+    # full | dynamic_only | static_only | region_risk_only | static_plus_graph
+    # -- GRAPH_SAGE_IMPROVEMENT_PLAN.md §6 Phase B feature-information
+    # ablations. See modeling/features.py::apply_feature_mode for exactly
+    # what each mode restricts and why.
+    feature_mode: str = "full"
 
 
 @dataclass

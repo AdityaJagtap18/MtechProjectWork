@@ -228,12 +228,15 @@ def test_onset_breakdown_separates_fresh_onset_from_already_ongoing_recall():
             "time": [10, 10, 10, 10],
             "actual_disruption": [1, 1, 1, 0],
             "predicted_disruption": [1, 0, 1, 0],
+            "risk_probability": [0.9, 0.2, 0.05, 0.5],
             "split": ["test"] * 4,
         }
     )
     # s0: disrupted already at t=10 and caught. s1: disrupted already at
-    # t=10 but missed. s2: NOT yet disrupted at t=10 (fresh onset ahead)
-    # and caught. s3: negative example, irrelevant here.
+    # t=10 but missed. s2: NOT yet disrupted at t=10 (fresh onset ahead),
+    # flagged positive but with a low probability that ranks below the
+    # negative s3 -- poor ranking quality despite the raw recall hit.
+    # s3: negative example.
     raw_labels = pd.DataFrame(
         {
             "supplier_id": ["s0", "s1", "s2", "s3"],
@@ -248,6 +251,16 @@ def test_onset_breakdown_separates_fresh_onset_from_already_ongoing_recall():
     assert test["n_fresh_onset"] == 1
     assert test["recall_already_ongoing"] == pytest.approx(0.5)  # s0 caught, s1 missed
     assert test["recall_fresh_onset"] == pytest.approx(1.0)  # s2 caught
+
+    # Ranking quality (GRAPH_SAGE_IMPROVEMENT_PLAN.md §5/§14): s2's fresh-onset
+    # probability (0.05) ranks BELOW the negative s3 (0.5) -- worst possible
+    # ranking for a single-pair comparison. The ongoing pair {s0=0.9, s1=0.2}
+    # against the same negative gets one pair right and one wrong (chance).
+    assert test["roc_auc_fresh_onset"] == pytest.approx(0.0)
+    assert test["roc_auc_already_ongoing"] == pytest.approx(0.5)
+    assert test["pr_auc_fresh_onset"] is not None
+    assert test["pr_auc_already_ongoing"] is not None
+    assert test["roc_auc_fresh_onset"] < test["roc_auc_already_ongoing"]
 
 
 def test_onset_breakdown_omits_splits_with_no_positives():

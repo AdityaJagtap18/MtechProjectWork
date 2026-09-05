@@ -385,6 +385,85 @@ def build_feature_frames(
     return NodeFeatureFrames(frames=frames, numeric_columns=numeric_columns, categorical_columns=categorical_columns)
 
 
+# ---------------------------------------------------------------------------
+# Feature-information ablations (GRAPH_SAGE_IMPROVEMENT_PLAN.md §6 Phase B)
+# ---------------------------------------------------------------------------
+
+FEATURE_MODES = ("full", "dynamic_only", "static_only", "region_risk_only", "static_plus_graph")
+
+# Improvement plan §6 B3's "supplier exposure variables" -- the subset of
+# the supplier's own static fields describing background risk exposure, as
+# opposed to operational capability (tier, capacity, reliability, ...).
+SUPPLIER_RISK_EXPOSURE_FIELDS = ["geopolitical_exposure", "disaster_exposure", "cyber_exposure"]
+
+
+def _is_static_column(node_type: NodeType, column: str) -> bool:
+    return column in STATIC_NUMERIC_FIELDS.get(node_type, []) or column in STATIC_CATEGORICAL_FIELDS.get(node_type, [])
+
+
+def apply_feature_mode(frames: NodeFeatureFrames, feature_mode: str) -> NodeFeatureFrames:
+    """Restricts which columns feed the model (improvement plan §6/§14's
+    ablation matrix). Operates by dropping columns from an already-built
+    `NodeFeatureFrames` -- it never changes how a column was computed, so
+    leakage-safety is unaffected by which mode is selected.
+
+    - "full": no restriction (the frozen benchmark from
+      CLASSICAL_GRAPHSAGE_IMPLEMENTATION_PLAN.md).
+    - "dynamic_only" / "static_only" / "region_risk_only": restrict only
+      the SUPPLIER node's own features to that group; every other node
+      type (material, plant, product, region, procurement) keeps its full
+      feature set. Isolates what the supplier's *own* information
+      contributes, while graph message passing can still bring in
+      whatever its neighbors know.
+    - "static_plus_graph": restricts EVERY node type to static-only
+      (drops all dynamic columns everywhere) -- a stricter test of
+      whether graph structure over purely static/structural information
+      carries signal, with zero dynamic information anywhere in the graph.
+
+    Documented interpretation: the improvement plan's ablation table
+    lists "Static-only GraphSAGE" and "Static + Graph Structure" as
+    separate rows without spelling out the difference between them. The
+    reading used here is that the former restricts only the supplier
+    node and the latter restricts the whole graph -- see this function's
+    call site in pipeline.py and GRAPHSAGE_IMPROVEMENT_PROGRESS.md for
+    the full reasoning.
+    """
+    if feature_mode not in FEATURE_MODES:
+        raise ValueError(f"unknown feature_mode={feature_mode!r}, expected one of {FEATURE_MODES}")
+    if feature_mode == "full":
+        return frames
+
+    new_frames: dict[NodeType, pd.DataFrame] = {}
+    new_numeric: dict[NodeType, list[str]] = {}
+    new_categorical: dict[NodeType, list[str]] = {}
+
+    for node_type, df in frames.frames.items():
+        numeric = frames.numeric_columns[node_type]
+        categorical = frames.categorical_columns[node_type]
+        static_numeric = [c for c in numeric if _is_static_column(node_type, c)]
+        dynamic_numeric = [c for c in numeric if not _is_static_column(node_type, c)]
+
+        restrict_this_type = feature_mode == "static_plus_graph" or node_type == NodeType.SUPPLIER
+        if not restrict_this_type:
+            keep_numeric, keep_categorical = numeric, categorical
+        elif feature_mode == "dynamic_only":
+            keep_numeric, keep_categorical = dynamic_numeric, []
+        elif feature_mode in ("static_only", "static_plus_graph"):
+            keep_numeric, keep_categorical = static_numeric, categorical
+        else:  # region_risk_only
+            keep_numeric, keep_categorical = [c for c in static_numeric if c in SUPPLIER_RISK_EXPOSURE_FIELDS], []
+
+        kept_columns = keep_numeric + keep_categorical
+        new_frames[node_type] = df[kept_columns] if kept_columns else df.iloc[:, 0:0]
+        new_numeric[node_type] = keep_numeric
+        new_categorical[node_type] = keep_categorical
+
+    if not (new_numeric[NodeType.SUPPLIER] or new_categorical[NodeType.SUPPLIER]):
+        raise ValueError(f"feature_mode={feature_mode!r} leaves the supplier node (the readout target) with zero features")
+
+    return NodeFeatureFrames(frames=new_frames, numeric_columns=new_numeric, categorical_columns=new_categorical)
+
+
 def build_prediction_examples(
     supplier_labels: pd.DataFrame, horizon_periods: int, min_history_periods: int, prediction_horizon: int
 ) -> pd.DataFrame:

@@ -20,6 +20,7 @@ from sklearn.linear_model import LogisticRegression
 from ..schema.nodes import NodeType
 from .calibration import compute_calibration
 from .config import ThresholdConfig
+from .evaluate import disruption_onset_breakdown
 from .metrics import compute_classification_metrics, select_threshold
 from .pipeline import PreparedData
 
@@ -33,9 +34,10 @@ class BaselineResult:
     threshold: float
     metrics_by_split: dict
     calibration_by_split: dict
+    onset_breakdown: dict
 
 
-def _finalize(name: str, predictions: pd.DataFrame, threshold_cfg: ThresholdConfig) -> BaselineResult:
+def _finalize(name: str, predictions: pd.DataFrame, threshold_cfg: ThresholdConfig, raw_supplier_labels: pd.DataFrame) -> BaselineResult:
     val = predictions[predictions["split"] == "validation"]
     threshold = select_threshold(
         val["actual_disruption"].values, val["risk_probability"].values,
@@ -52,7 +54,11 @@ def _finalize(name: str, predictions: pd.DataFrame, threshold_cfg: ThresholdConf
         metrics_by_split[split] = compute_classification_metrics(sub["actual_disruption"].values, sub["risk_probability"].values, threshold)
         calibration_by_split[split] = compute_calibration(sub["actual_disruption"].values, sub["risk_probability"].values)
 
-    return BaselineResult(name=name, predictions=predictions, threshold=threshold, metrics_by_split=metrics_by_split, calibration_by_split=calibration_by_split)
+    onset_breakdown = disruption_onset_breakdown(predictions, raw_supplier_labels)
+    return BaselineResult(
+        name=name, predictions=predictions, threshold=threshold, metrics_by_split=metrics_by_split,
+        calibration_by_split=calibration_by_split, onset_breakdown=onset_breakdown,
+    )
 
 
 def run_majority_baseline(prepared: PreparedData, threshold_cfg: ThresholdConfig) -> BaselineResult:
@@ -64,7 +70,7 @@ def run_majority_baseline(prepared: PreparedData, threshold_cfg: ThresholdConfig
     predictions = examples.rename(columns={"target": "actual_disruption"}).copy()
     predictions["risk_probability"] = train_rate
     predictions = predictions[["supplier_id", "time", "risk_probability", "actual_disruption", "split"]]
-    return _finalize("majority", predictions, threshold_cfg)
+    return _finalize("majority", predictions, threshold_cfg, prepared.benchmark.labels["supplier"])
 
 
 def run_logistic_regression_baseline(prepared: PreparedData, threshold_cfg: ThresholdConfig, seed: int = 42) -> BaselineResult:
@@ -95,4 +101,4 @@ def run_logistic_regression_baseline(prepared: PreparedData, threshold_cfg: Thre
     predictions = examples[["supplier_id", "time", "split"]].copy()
     predictions["risk_probability"] = probs
     predictions["actual_disruption"] = examples["target"].values
-    return _finalize("logistic_regression", predictions, threshold_cfg)
+    return _finalize("logistic_regression", predictions, threshold_cfg, prepared.benchmark.labels["supplier"])

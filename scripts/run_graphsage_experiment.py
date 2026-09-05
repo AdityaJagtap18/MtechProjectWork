@@ -35,10 +35,13 @@ from scm_dataset.modeling.train import class_balance_summary, train_graphsage
 
 
 def _strategy_tag(config) -> str:
-    # Keeps existing "temporal" run directory names unchanged; distinguishes
-    # severity/scenario generalization runs so they don't read as more
-    # temporal-split runs once both kinds accumulate side by side.
-    return "" if config.split.strategy == "temporal" else f"_{config.split.strategy}"
+    # Keeps existing "temporal"/"full" run directory names unchanged;
+    # distinguishes severity/scenario generalization runs and feature-mode
+    # ablations (GRAPH_SAGE_IMPROVEMENT_PLAN.md §6) so they don't read as
+    # more primary runs once several kinds accumulate side by side.
+    split_tag = "" if config.split.strategy == "temporal" else f"_{config.split.strategy}"
+    feature_tag = "" if config.features.feature_mode == "full" else f"_{config.features.feature_mode}"
+    return split_tag + feature_tag
 
 
 def _save_graphsage_run(prepared, train_result, eval_result, config, seed: int) -> str:
@@ -90,6 +93,7 @@ def _save_baseline_run(name: str, result, prepared, config) -> str:
     result.predictions.to_csv(os.path.join(run_dir, "predictions.csv"), index=False)
     write_json(os.path.join(run_dir, "metrics.json"), {"threshold": result.threshold, "by_split": result.metrics_by_split})
     write_json(os.path.join(run_dir, "calibration.json"), result.calibration_by_split)
+    write_json(os.path.join(run_dir, "onset_breakdown.json"), result.onset_breakdown)
     metadata = build_run_metadata(
         config, prepared.benchmark, prepared.frames, seed=config.seed,
         split_summary=class_balance_summary(prepared.examples), training_duration_seconds=None,
@@ -106,9 +110,16 @@ def main() -> None:
     parser.add_argument("--seeds", default=None, help="Comma-separated seeds; defaults to the config's `experiment.seeds` first entry only unless --all-seeds is given.")
     parser.add_argument("--all-seeds", action="store_true", help="Run every seed listed in the config's experiment.seeds.")
     parser.add_argument("--baselines", action="store_true", help="Also run Majority + Logistic Regression baselines.")
+    parser.add_argument(
+        "--feature-mode", default=None,
+        choices=["full", "dynamic_only", "static_only", "region_risk_only", "static_plus_graph"],
+        help="Override config's features.feature_mode (GRAPH_SAGE_IMPROVEMENT_PLAN.md Phase B ablations).",
+    )
     args = parser.parse_args()
 
     config = load_config(args.config)
+    if args.feature_mode:
+        config.features.feature_mode = args.feature_mode
     if args.seeds:
         seeds = [int(s) for s in args.seeds.split(",")]
     elif args.all_seeds:
@@ -116,11 +127,12 @@ def main() -> None:
     else:
         seeds = [config.seed]
 
-    print(f"Preparing benchmark data (dataset={config.dataset.dataset_id}, split={config.split.strategy}) ...")
+    print(f"Preparing benchmark data (dataset={config.dataset.dataset_id}, split={config.split.strategy}, feature_mode={config.features.feature_mode}) ...")
     prepared = prepare(config)
     print(f"Prediction examples: {len(prepared.examples)} (supplier x prediction_time)")
 
     test_metrics_by_seed = []
+    onset_by_seed = []
     for seed in seeds:
         print(f"\n=== seed {seed} ===")
         train_result = train_graphsage(prepared, seed=seed)
@@ -131,6 +143,15 @@ def main() -> None:
             test_metrics_by_seed.append(eval_result.metrics_by_split["test"])
             m = eval_result.metrics_by_split["test"]
             print(f"  test: pr_auc={m['pr_auc']} roc_auc={m['roc_auc']} f1={m['f1']:.4f} precision={m['precision']:.4f} recall={m['recall']:.4f}")
+        onset = eval_result.onset_breakdown.get("test")
+        if onset:
+            onset_by_seed.append(onset)
+            print(
+                f"  test onset breakdown: fresh_onset(n={onset['n_fresh_onset']}, recall={onset['recall_fresh_onset']}, "
+                f"pr_auc={onset['pr_auc_fresh_onset']}, roc_auc={onset['roc_auc_fresh_onset']}) | "
+                f"already_ongoing(n={onset['n_already_ongoing']}, recall={onset['recall_already_ongoing']}, "
+                f"pr_auc={onset['pr_auc_already_ongoing']}, roc_auc={onset['roc_auc_already_ongoing']})"
+            )
 
     if len(seeds) > 1 and test_metrics_by_seed:
         summary = {}
@@ -138,12 +159,24 @@ def main() -> None:
             values = [m[key] for m in test_metrics_by_seed if m.get(key) is not None]
             if values:
                 summary[key] = {"mean": float(np.mean(values)), "std": float(np.std(values)), "n_seeds": len(values)}
+        onset_summary = {}
+        for key in (
+            "recall_fresh_onset", "recall_already_ongoing", "pr_auc_fresh_onset", "roc_auc_fresh_onset",
+            "pr_auc_already_ongoing", "roc_auc_already_ongoing",
+        ):
+            values = [o[key] for o in onset_by_seed if o.get(key) is not None]
+            if values:
+                onset_summary[key] = {"mean": float(np.mean(values)), "std": float(np.std(values)), "n_seeds": len(values)}
         summary_name = f"multiseed_summary{_strategy_tag(config)}_seeds_{'-'.join(str(s) for s in seeds)}.json"
         summary_path = os.path.join(config.experiment.output_dir, summary_name)
-        write_json(summary_path, {"seeds": seeds, "test_metrics": summary})
+        write_json(summary_path, {"seeds": seeds, "test_metrics": summary, "test_onset_breakdown": onset_summary})
         print(f"\nMulti-seed test summary (mean +/- std over {len(seeds)} seeds) -> {summary_path}")
         for key, stats in summary.items():
             print(f"  {key}: {stats['mean']:.4f} +/- {stats['std']:.4f}")
+        if onset_summary:
+            print("  onset breakdown:")
+            for key, stats in onset_summary.items():
+                print(f"    {key}: {stats['mean']:.4f} +/- {stats['std']:.4f}")
 
     if args.baselines:
         print("\n=== baselines ===")

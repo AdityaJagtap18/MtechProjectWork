@@ -169,3 +169,93 @@ def test_supplier_panel_fulfillment_ratio_correctness_and_missing_when_no_orders
     assert panel.loc[("s0", 3), "fulfillment_ratio_4"] == pytest.approx(0.9)
     # no orders ever placed by t=0 -> genuinely undefined, must be NaN (not 0)
     assert np.isnan(panel.loc[("s0", 0), "fulfillment_ratio_4"])
+
+
+# ---- apply_feature_mode (GRAPH_SAGE_IMPROVEMENT_PLAN.md Phase B) ----
+
+
+def test_feature_mode_full_is_a_no_op(tiny_benchmark):
+    from scm_dataset.modeling.features import apply_feature_mode, build_feature_frames
+
+    frames = build_feature_frames(tiny_benchmark.graph, tiny_benchmark.operations, tiny_benchmark.horizon_periods, [4, 8])
+    result = apply_feature_mode(frames, "full")
+    assert result is frames
+
+
+def test_feature_mode_dynamic_only_restricts_supplier_but_not_other_types(tiny_benchmark):
+    from scm_dataset.modeling.features import STATIC_NUMERIC_FIELDS, apply_feature_mode, build_feature_frames
+    from scm_dataset.schema.nodes import NodeType
+
+    frames = build_feature_frames(tiny_benchmark.graph, tiny_benchmark.operations, tiny_benchmark.horizon_periods, [4, 8])
+    result = apply_feature_mode(frames, "dynamic_only")
+
+    # supplier: no static fields or categoricals survive
+    assert result.categorical_columns[NodeType.SUPPLIER] == []
+    for col in result.numeric_columns[NodeType.SUPPLIER]:
+        assert col not in STATIC_NUMERIC_FIELDS[NodeType.SUPPLIER]
+    assert len(result.numeric_columns[NodeType.SUPPLIER]) > 0
+
+    # other node types are untouched
+    assert result.numeric_columns[NodeType.MATERIAL] == frames.numeric_columns[NodeType.MATERIAL]
+    assert result.numeric_columns[NodeType.PLANT] == frames.numeric_columns[NodeType.PLANT]
+    assert result.numeric_columns[NodeType.PRODUCT] == frames.numeric_columns[NodeType.PRODUCT]
+
+
+def test_feature_mode_static_only_restricts_supplier_to_static_fields(tiny_benchmark):
+    from scm_dataset.modeling.features import STATIC_NUMERIC_FIELDS, apply_feature_mode, build_feature_frames
+    from scm_dataset.schema.nodes import NodeType
+
+    frames = build_feature_frames(tiny_benchmark.graph, tiny_benchmark.operations, tiny_benchmark.horizon_periods, [4, 8])
+    result = apply_feature_mode(frames, "static_only")
+    assert set(result.numeric_columns[NodeType.SUPPLIER]) == set(STATIC_NUMERIC_FIELDS[NodeType.SUPPLIER])
+    assert result.categorical_columns[NodeType.SUPPLIER] == ["industry"]
+    # the underlying dataframe's columns must match, not just the recorded list
+    assert set(result.frames[NodeType.SUPPLIER].columns) == set(result.numeric_columns[NodeType.SUPPLIER]) | {"industry"}
+
+
+def test_feature_mode_region_risk_only_keeps_only_exposure_fields(tiny_benchmark):
+    from scm_dataset.modeling.features import SUPPLIER_RISK_EXPOSURE_FIELDS, apply_feature_mode, build_feature_frames
+    from scm_dataset.schema.nodes import NodeType
+
+    frames = build_feature_frames(tiny_benchmark.graph, tiny_benchmark.operations, tiny_benchmark.horizon_periods, [4, 8])
+    result = apply_feature_mode(frames, "region_risk_only")
+    assert set(result.numeric_columns[NodeType.SUPPLIER]) == set(SUPPLIER_RISK_EXPOSURE_FIELDS)
+    assert result.categorical_columns[NodeType.SUPPLIER] == []
+    assert "criticality" not in result.numeric_columns[NodeType.SUPPLIER]  # not an "exposure" field
+
+
+def test_feature_mode_static_plus_graph_restricts_every_node_type(tiny_benchmark):
+    from scm_dataset.modeling.features import STATIC_NUMERIC_FIELDS, apply_feature_mode, build_feature_frames
+    from scm_dataset.schema.nodes import NodeType
+
+    frames = build_feature_frames(tiny_benchmark.graph, tiny_benchmark.operations, tiny_benchmark.horizon_periods, [4, 8])
+    result = apply_feature_mode(frames, "static_plus_graph")
+    for node_type in (NodeType.SUPPLIER, NodeType.MATERIAL, NodeType.PLANT, NodeType.PRODUCT):
+        assert set(result.numeric_columns[node_type]) == set(STATIC_NUMERIC_FIELDS[node_type])
+    # region/procurement had no dynamic component anyway -- unaffected
+    assert result.numeric_columns[NodeType.REGION] == frames.numeric_columns[NodeType.REGION]
+    assert result.numeric_columns[NodeType.PROCUREMENT] == frames.numeric_columns[NodeType.PROCUREMENT]
+
+
+def test_feature_mode_rejects_unknown_mode(tiny_benchmark):
+    from scm_dataset.modeling.features import apply_feature_mode, build_feature_frames
+
+    frames = build_feature_frames(tiny_benchmark.graph, tiny_benchmark.operations, tiny_benchmark.horizon_periods, [4, 8])
+    with pytest.raises(ValueError, match="unknown feature_mode"):
+        apply_feature_mode(frames, "made_up_mode")
+
+
+def test_feature_mode_never_touches_non_supplier_dynamic_computation(tiny_benchmark):
+    # Restricting the supplier's own columns must not change what was
+    # computed for material/plant/product -- apply_feature_mode only drops
+    # columns, never recomputes anything (leakage-safety is orthogonal to
+    # which mode is selected).
+    from scm_dataset.modeling.features import apply_feature_mode, build_feature_frames
+    from scm_dataset.schema.nodes import NodeType
+
+    frames = build_feature_frames(tiny_benchmark.graph, tiny_benchmark.operations, tiny_benchmark.horizon_periods, [4, 8])
+    result = apply_feature_mode(frames, "static_only")
+    pd.testing.assert_frame_equal(
+        result.frames[NodeType.MATERIAL],
+        frames.frames[NodeType.MATERIAL][result.numeric_columns[NodeType.MATERIAL] + result.categorical_columns[NodeType.MATERIAL]],
+    )

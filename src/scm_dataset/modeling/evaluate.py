@@ -131,7 +131,8 @@ def compute_warning_times(predictions: pd.DataFrame, raw_supplier_labels: pd.Dat
 
 def disruption_onset_breakdown(predictions: pd.DataFrame, raw_supplier_labels: pd.DataFrame) -> dict:
     """Splits every actual-positive example into two very different cases
-    and reports recall separately for each, per split:
+    and reports recall AND ranking quality (PR-AUC/ROC-AUC against the
+    split's negatives) separately for each, per split:
 
     - "already ongoing": `supplier_disrupted[t] == 1` -- the supplier is
       already visibly disrupted at the prediction time itself, so the
@@ -149,7 +150,14 @@ def disruption_onset_breakdown(predictions: pd.DataFrame, raw_supplier_labels: p
     bit-identical across 5 independent seeds (it turned out to be catching
     the exact same 360 already-ongoing examples every time, and zero of
     the 84 fresh onsets in every seed). Surfacing it as a real, saved
-    metric rather than a one-off check."""
+    metric rather than a one-off check.
+
+    `pr_auc_fresh_onset`/`roc_auc_fresh_onset` (GRAPH_SAGE_IMPROVEMENT_PLAN.md
+    §5/§14): computed by pairing ONLY the fresh-onset positives against
+    the split's negatives (already-ongoing positives excluded from that
+    comparison) -- this isolates ranking quality on the genuinely hard
+    subgroup instead of drowning it in the easy one. Same construction for
+    `*_already_ongoing`."""
     raw_lookup = raw_supplier_labels.set_index(["supplier_id", "time"])["supplier_disrupted"]
     positives = predictions[predictions["actual_disruption"] == 1].copy()
     if positives.empty:
@@ -158,19 +166,34 @@ def disruption_onset_breakdown(predictions: pd.DataFrame, raw_supplier_labels: p
         int(raw_lookup.get((sid, t), 0)) for sid, t in zip(positives["supplier_id"], positives["time"])
     ]
 
+    def _ranking_metrics(positive_subset: pd.DataFrame, negatives: pd.DataFrame) -> tuple[float | None, float | None]:
+        if positive_subset.empty:
+            return None, None
+        combined = pd.concat([positive_subset, negatives])
+        m = compute_classification_metrics(combined["actual_disruption"].values, combined["risk_probability"].values, threshold=0.5)
+        return m["pr_auc"], m["roc_auc"]
+
     result = {}
     for split in SPLITS:
+        split_all = predictions[predictions["split"] == split]
+        negatives = split_all[split_all["actual_disruption"] == 0]
         sub = positives[positives["split"] == split]
         if sub.empty:
             continue
         fresh = sub[sub["already_disrupted_at_t"] == 0]
         ongoing = sub[sub["already_disrupted_at_t"] == 1]
+        fresh_pr_auc, fresh_roc_auc = _ranking_metrics(fresh, negatives)
+        ongoing_pr_auc, ongoing_roc_auc = _ranking_metrics(ongoing, negatives)
         result[split] = {
             "n_positive": int(len(sub)),
             "n_fresh_onset": int(len(fresh)),
             "n_already_ongoing": int(len(ongoing)),
             "recall_fresh_onset": float(fresh["predicted_disruption"].mean()) if len(fresh) else None,
             "recall_already_ongoing": float(ongoing["predicted_disruption"].mean()) if len(ongoing) else None,
+            "pr_auc_fresh_onset": fresh_pr_auc,
+            "roc_auc_fresh_onset": fresh_roc_auc,
+            "pr_auc_already_ongoing": ongoing_pr_auc,
+            "roc_auc_already_ongoing": ongoing_roc_auc,
         }
     return result
 

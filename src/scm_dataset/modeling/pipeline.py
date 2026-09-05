@@ -19,6 +19,7 @@ from .config import GraphSAGEConfig
 from .data import BenchmarkData, load_benchmark
 from .features import (
     NodeFeatureFrames,
+    apply_feature_mode,
     audit_feature_sources,
     build_feature_frames,
     build_prediction_examples,
@@ -136,6 +137,7 @@ def prepare_from_benchmark(config: GraphSAGEConfig, benchmark: BenchmarkData, pr
     frames = build_feature_frames(
         benchmark.graph, benchmark.operations, benchmark.horizon_periods, config.features.rolling_windows
     )
+    frames = apply_feature_mode(frames, config.features.feature_mode)
 
     examples = build_prediction_examples(
         benchmark.labels["supplier"],
