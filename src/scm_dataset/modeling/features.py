@@ -416,17 +416,34 @@ def apply_feature_mode(frames: NodeFeatureFrames, feature_mode: str) -> NodeFeat
       contributes, while graph message passing can still bring in
       whatever its neighbors know.
     - "static_plus_graph": restricts EVERY node type to static-only
-      (drops all dynamic columns everywhere) -- a stricter test of
-      whether graph structure over purely static/structural information
-      carries signal, with zero dynamic information anywhere in the graph.
+      (drops all dynamic columns everywhere).
 
     Documented interpretation: the improvement plan's ablation table
     lists "Static-only GraphSAGE" and "Static + Graph Structure" as
     separate rows without spelling out the difference between them. The
     reading used here is that the former restricts only the supplier
-    node and the latter restricts the whole graph -- see this function's
-    call site in pipeline.py and GRAPHSAGE_IMPROVEMENT_PROGRESS.md for
-    the full reasoning.
+    node and the latter restricts the whole graph.
+
+    **"static_plus_graph" is now known to degenerate to a fixed
+    per-supplier score, structurally, on any dataset/split.** Once every
+    node type is static-only, nothing anywhere in the graph varies from
+    one prediction week to the next (there is no week-index feature
+    standing in for time), so the model cannot help but learn a
+    time-invariant score -- confirmed empirically (`temporal_variation_
+    summary` in evaluate.py reported 0/300 suppliers with any variation
+    across their prediction times on the first real run of this mode).
+    That score can still score deceptively well on a test window
+    dominated by one long-running event, which is exactly what happened
+    (0.933 PR-AUC, beating the full model, with zero cross-seed
+    variance). "static_only" (restrict only the supplier; neighbors keep
+    their time-varying features, which still reach the supplier through
+    message passing) does NOT have this problem and is the mode that
+    actually answers "does graph structure over static information carry
+    signal" -- see GRAPHSAGE_IMPROVEMENT_PROGRESS.md for the full
+    writeup. "static_plus_graph" is kept here for completeness/transparency
+    (a plan-specified variant did get built and run) but should not be
+    used as evidence about structural information without independently
+    checking `temporal_variation_summary` first.
     """
     if feature_mode not in FEATURE_MODES:
         raise ValueError(f"unknown feature_mode={feature_mode!r}, expected one of {FEATURE_MODES}")
