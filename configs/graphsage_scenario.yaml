@@ -1,0 +1,46 @@
+# Scenario generalization experiment (GRAPHSAGE_FINAL_GENERALIZATION_AND_IMPROVEMENT_PLAN.md
+# Phase A item 4): identical to configs/graphsage.yaml except split.strategy.
+# Held-out event types (cyberattack, geopolitical) are fixed by the
+# benchmark's own pre-generated splits/scenario_split.csv -- see that
+# file's comment and scripts/build_benchmark.py. Treat as supporting
+# evidence, not the primary generalization result: the held-out event
+# population is thin (test-period count, not example count -- 54/104
+# periods for seed43, 63/104 for seed44).
+dataset:
+  benchmark_path: data/benchmark
+  dataset_id: scm_v1_black_swan_seed43
+
+prediction:
+  target: supplier_disrupted
+  horizon_periods: 4
+
+features:
+  rolling_windows: [4, 8, 12]
+  min_history_periods: 12
+
+split:
+  strategy: scenario
+  generalization_val_frac: 0.15
+
+model:
+  name: hetero_graphsage
+  hidden_dim: 128
+  num_layers: 2
+  dropout: 0.20
+  aggregation: mean
+
+training:
+  epochs: 100
+  learning_rate: 0.001
+  weight_decay: 0.0001
+  early_stopping_patience: 10
+  class_weighting: balanced
+
+threshold:
+  policy: fixed
+  value: 0.5
+  target_value: 0.8
+
+experiment:
+  output_dir: experiments/classical_gnn
+  seeds: [42, 43, 44, 45, 46]
