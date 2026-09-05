@@ -1,0 +1,207 @@
+"""Tests for modeling/metrics.py, modeling/calibration.py, and
+modeling/evaluate.py (plan §31-40/§47/§66 Check 10)."""
+
+from __future__ import annotations
+
+import numpy as np
+import pandas as pd
+import pytest
+
+from scm_dataset.modeling.calibration import compute_calibration, expected_calibration_error
+from scm_dataset.modeling.evaluate import build_risk_ranking, compute_warning_times, evaluate_experiment, generate_predictions
+from scm_dataset.modeling.graphsage import build_model
+from scm_dataset.modeling.metrics import compute_classification_metrics, select_threshold
+
+# ---- metrics.py ----
+
+
+def test_confusion_matrix_and_precision_recall_f1_hand_computed():
+    # 2 TP, 1 FP, 1 FN, 2 TN by construction
+    y_true = np.array([1, 1, 0, 0, 1, 0])
+    y_prob = np.array([0.9, 0.4, 0.6, 0.1, 0.2, 0.3])
+    threshold = 0.5
+    metrics = compute_classification_metrics(y_true, y_prob, threshold)
+
+    cm = metrics["confusion_matrix"]
+    assert (cm["tp"], cm["fp"], cm["fn"], cm["tn"]) == (1, 1, 2, 2)
+    precision = 1 / (1 + 1)
+    recall = 1 / (1 + 2)
+    f1 = 2 * precision * recall / (precision + recall)
+    assert metrics["precision"] == pytest.approx(precision)
+    assert metrics["recall"] == pytest.approx(recall)
+    assert metrics["f1"] == pytest.approx(f1)
+
+
+def test_pr_auc_and_roc_auc_use_continuous_probabilities_not_binary_predictions():
+    # Perfect ranking (all positives score higher than all negatives) but a
+    # threshold of 0.5 would misclassify everyone -- PR-AUC/ROC-AUC must
+    # still reflect the perfect ranking, proving they're computed from
+    # y_prob directly and not from the thresholded y_pred.
+    y_true = np.array([0, 0, 0, 1, 1, 1])
+    y_prob = np.array([0.61, 0.62, 0.63, 0.64, 0.65, 0.66])  # all >= 0.5 -> y_pred all 1 at threshold 0.5
+    metrics = compute_classification_metrics(y_true, y_prob, threshold=0.5)
+    assert metrics["roc_auc"] == pytest.approx(1.0)
+    assert metrics["pr_auc"] == pytest.approx(1.0)
+    assert metrics["precision"] < 1.0  # thresholded predictions are all-positive, so precision != the ranking quality
+
+
+def test_roc_auc_is_safely_undefined_for_single_class_split():
+    y_true = np.zeros(10)
+    y_prob = np.random.RandomState(0).rand(10)
+    metrics = compute_classification_metrics(y_true, y_prob, threshold=0.5)
+    assert metrics["roc_auc"] is None
+    assert metrics["pr_auc"] is None
+    assert "undefined" in metrics["roc_auc_note"]
+
+
+def test_select_threshold_fixed_ignores_data():
+    assert select_threshold(np.array([1, 0]), np.array([0.9, 0.1]), policy="fixed", value=0.42) == 0.42
+
+
+def test_select_threshold_f1_optimal_beats_default_on_separable_data():
+    y_true = np.array([0] * 8 + [1] * 2)
+    y_prob = np.array([0.05] * 8 + [0.4, 0.45])  # positives score higher but all < 0.5
+    threshold = select_threshold(y_true, y_prob, policy="f1_optimal")
+    f1_at_selected = compute_classification_metrics(y_true, y_prob, threshold)["f1"]
+    f1_at_default = compute_classification_metrics(y_true, y_prob, 0.5)["f1"]
+    assert f1_at_selected >= f1_at_default
+
+
+def test_select_threshold_recall_constrained_meets_target_recall():
+    rng = np.random.RandomState(0)
+    y_true = np.array([1] * 20 + [0] * 80)
+    y_prob = np.clip(y_true * 0.5 + rng.rand(100) * 0.5, 0, 1)
+    threshold = select_threshold(y_true, y_prob, policy="recall_constrained", target_value=0.8)
+    recall = compute_classification_metrics(y_true, y_prob, threshold)["recall"]
+    assert recall >= 0.8 - 1e-9
+
+
+def test_select_threshold_falls_back_to_fixed_value_when_unreachable():
+    y_true = np.array([1, 0, 0, 0])
+    y_prob = np.array([0.1, 0.2, 0.3, 0.4])
+    threshold = select_threshold(y_true, y_prob, policy="precision_constrained", value=0.5, target_value=0.99)
+    assert threshold == 0.5  # no threshold reaches 99% precision here -> fallback
+
+
+def test_select_threshold_rejects_unknown_policy():
+    with pytest.raises(ValueError, match="unknown threshold policy"):
+        select_threshold(np.array([1, 0]), np.array([0.9, 0.1]), policy="magic")
+
+
+# ---- calibration.py ----
+
+
+def test_expected_calibration_error_is_zero_for_perfectly_calibrated_predictions():
+    # 10 groups of 10: group i predicts prob i/10 and has exactly i
+    # positives out of 10 -- observed frequency equals the predicted
+    # probability exactly, by construction, in every bin.
+    y_true, y_prob = [], []
+    for i in range(10):
+        p = i / 10
+        y_true += [1] * i + [0] * (10 - i)
+        y_prob += [p] * 10
+    ece = expected_calibration_error(np.array(y_true, dtype=float), np.array(y_prob, dtype=float), n_bins=10)
+    assert ece == pytest.approx(0.0, abs=1e-9)
+
+
+def test_expected_calibration_error_is_large_for_badly_calibrated_predictions():
+    y_true = np.array([0] * 50)
+    y_prob = np.array([0.95] * 50)  # always confident and always wrong
+    ece = expected_calibration_error(y_true, y_prob, n_bins=10)
+    assert ece == pytest.approx(0.95, abs=0.05)
+
+
+def test_compute_calibration_handles_empty_input():
+    result = compute_calibration(np.array([]), np.array([]))
+    assert result["brier_score"] is None
+
+
+# ---- evaluate.py (uses tiny_prepared_data fixture) ----
+
+
+def _tiny_model(prepared):
+    in_dims = {nt.value: dim for nt, dim in prepared.snapshot_builder.feature_dims().items()}
+    edge_types = list(prepared.snapshot_builder.topology.edge_index_dict.keys())
+    return build_model(in_dims=in_dims, edge_types=edge_types, hidden_dim=16, num_layers=2, dropout=0.0)
+
+
+def test_generate_predictions_covers_every_example_with_probabilities_in_unit_range(tiny_prepared_data):
+    model = _tiny_model(tiny_prepared_data)
+    predictions = generate_predictions(model, tiny_prepared_data)
+    assert len(predictions) == len(tiny_prepared_data.examples)
+    assert predictions["risk_probability"].between(0.0, 1.0).all()
+    assert set(predictions["actual_disruption"].unique()) <= {0, 1}
+
+
+def test_evaluate_experiment_selects_threshold_from_validation_only(tiny_prepared_data, monkeypatch):
+    model = _tiny_model(tiny_prepared_data)
+
+    seen_split_args = []
+    from scm_dataset.modeling import evaluate as evaluate_module
+
+    original_select_threshold = evaluate_module.select_threshold
+
+    def spy_select_threshold(y_true, y_prob, **kwargs):
+        seen_split_args.append((y_true.copy(), y_prob.copy()))
+        return original_select_threshold(y_true, y_prob, **kwargs)
+
+    monkeypatch.setattr(evaluate_module, "select_threshold", spy_select_threshold)
+    result = evaluate_experiment(model, tiny_prepared_data, tiny_prepared_data.config.threshold)
+
+    predictions = result.predictions
+    val = predictions[predictions["split"] == "validation"]
+    assert len(seen_split_args) == 1
+    seen_y_true, _ = seen_split_args[0]
+    assert len(seen_y_true) == len(val)  # threshold selection was called with exactly the validation rows
+
+
+def test_evaluate_experiment_produces_metrics_for_every_nonempty_split(tiny_prepared_data):
+    model = _tiny_model(tiny_prepared_data)
+    result = evaluate_experiment(model, tiny_prepared_data, tiny_prepared_data.config.threshold)
+    for split in ("train", "validation", "test"):
+        assert split in result.metrics_by_split
+        assert split in result.calibration_by_split
+
+
+def test_risk_ranking_is_sorted_descending_and_ranked_from_one(tiny_prepared_data):
+    model = _tiny_model(tiny_prepared_data)
+    predictions = generate_predictions(model, tiny_prepared_data)
+    predictions["predicted_disruption"] = (predictions["risk_probability"] >= 0.5).astype(int)
+    from scm_dataset.modeling.evaluate import build_supplier_context
+
+    context = build_supplier_context(tiny_prepared_data)
+    ranking = build_risk_ranking(predictions, threshold=0.5, supplier_context=context)
+
+    assert list(ranking["rank"]) == list(range(1, len(ranking) + 1))
+    assert (ranking["risk_probability"].diff().dropna() <= 1e-9).all()  # non-increasing
+    assert ranking["time"].nunique() == 1  # one snapshot, not every (supplier, time) pair
+
+
+def test_warning_times_never_uses_a_prediction_at_or_after_onset():
+    predictions = pd.DataFrame(
+        {
+            "supplier_id": ["s0", "s0", "s0", "s0"],
+            "time": [10, 11, 12, 13],
+            "predicted_disruption": [0, 1, 1, 1],
+        }
+    )
+    raw_labels = pd.DataFrame(
+        {
+            "supplier_id": ["s0"] * 20,
+            "time": range(20),
+            "supplier_disrupted": [0] * 13 + [1] * 7,  # onset at t=13
+        }
+    )
+    warnings = compute_warning_times(predictions, raw_labels, horizon_periods=4)
+    row = warnings[warnings.supplier_id == "s0"].iloc[0]
+    assert row.onset_time == 13
+    assert row.first_warning_time == 11  # first predicted_disruption==1 strictly before onset
+    assert row.warning_periods == 2
+
+
+def test_warning_times_reports_none_when_never_warned():
+    predictions = pd.DataFrame({"supplier_id": ["s0"], "time": [0], "predicted_disruption": [0]})
+    raw_labels = pd.DataFrame({"supplier_id": ["s0"] * 5, "time": range(5), "supplier_disrupted": [0, 0, 0, 1, 1]})
+    warnings = compute_warning_times(predictions, raw_labels, horizon_periods=4)
+    row = warnings.iloc[0]
+    assert row.first_warning_time is None or (isinstance(row.first_warning_time, float) and np.isnan(row.first_warning_time))
