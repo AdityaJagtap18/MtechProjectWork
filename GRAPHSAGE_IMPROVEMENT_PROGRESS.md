@@ -52,56 +52,87 @@ exposure variable).
 - `scripts/build_ablation_matrix.py`: reads a set of already-saved run
   directories (no retraining) and assembles the exact §14 table (one row
   per feature mode/baseline, averaged across however many seeds you pass
-  in), writing both markdown and CSV.
-- 12 new tests (`apply_feature_mode` correctness for all 5 modes, the
-  extended onset breakdown's ranking metrics, the ablation matrix script's
-  aggregation math). **Full suite: 173/173 passing.**
+  in), writing both markdown and CSV. Now also reads `temporal_variation.
+  json` and flags a row's label if the model appears to have degenerated
+  to a fixed per-supplier score (see below).
+- `evaluate.py::temporal_variation_summary` (`temporal_variation.json` on
+  every run): the fraction of suppliers whose `risk_probability` varies at
+  all across their own prediction times. Added after the finding below.
+- 20 new tests total across this phase. **Full suite: 180/180 passing.**
 
-### What's NOT done — this is where to run next
-The infrastructure is ready; the actual sweep hasn't been run. To produce
-the real §14 table:
+### The sweep was run — and it revealed two real problems, not just results
+
+The user ran all 4 feature modes (5 seeds each) against `configs/
+graphsage.yaml` (the **temporal** split). Two things went wrong with that
+choice, both now fixed/documented, not swept under the rug:
+
+**Problem 1 — wrong split for the question being asked.** The temporal
+split's test window is dominated by one long-running severity-5 event, so
+it structurally contains **zero fresh-onset examples** for every feature
+mode. The whole point of this ablation (does static/region-risk info
+predict a disruption *before* it starts?) cannot be answered on a test set
+that has no such examples in it. Every mode's `Fresh-Onset *` columns come
+back `n/a`. **This was a mistake in how the sweep was set up (my error,
+correcting it here)** — the severity split (`configs/graphsage_severity.
+yaml`) has 84 fresh onsets in its test split and is the one that can
+actually test this.
+
+**Problem 2 — the `static_plus_graph` mode is structurally degenerate.**
+It scored 0.933 PR-AUC (beating the full model's 0.807) with **exactly
+zero variance across 5 independently-seeded runs** — precisely the kind
+of too-clean result that turned out to be real trouble the last time it
+showed up (recall §5's severity finding). Checked directly: every one of
+300 suppliers gets the *identical* `risk_probability` at *every one* of
+its ~89 prediction times. Once every node type in the graph is
+static-only, nothing anywhere in the model's input varies from one week
+to the next (no week-index feature stands in for time), so the model can
+only learn a fixed per-supplier score — which then scores very well on a
+test window dominated by one long-running event (rewarding "is this one
+of the ~11 historically troubled suppliers") without doing anything
+resembling temporal prediction. `temporal_variation_summary` now catches
+this automatically and `build_ablation_matrix.py` flags it in the table.
+**`static_plus_graph` should be treated as retired/uninformative** — it's
+kept in the code for transparency (it's a real, run, plan-specified
+variant) but `static_only` (restrict only the supplier; neighbors keep
+their time-varying features, which still reach the supplier via message
+passing) is the mode that actually answers "does graph structure over
+static information carry signal," without this degeneracy.
+
+**What the run DID legitimately show** (persistence-detection comparison
+only, since fresh-onset is unanswerable on this split): static features
+contribute much more than dynamic ones to persistence detection
+(static-only 0.818 PR-AUC vs dynamic-only 0.583), region-risk alone gives
+a middling result (0.633), and the full model (0.807) scores slightly
+*below* static-only — suggestive that the dynamic operational features may
+currently add more noise than signal for this specific task, consistent
+with every training run in the sweep showing validation loss rising while
+training loss keeps falling (classic overfitting). This is a real,
+usable finding, just not the fresh-onset finding the sweep set out to get.
+
+### Actual next step
+Rerun the three non-degenerate modes against the **severity** split,
+which has fresh onsets to actually measure against:
 
 ```bash
-# One command per feature mode, 5 seeds each (~5 min per mode on CPU):
-.venv/bin/python scripts/run_graphsage_experiment.py --config configs/graphsage.yaml --feature-mode dynamic_only --seeds 42,43,44,45,46
-.venv/bin/python scripts/run_graphsage_experiment.py --config configs/graphsage.yaml --feature-mode static_only --seeds 42,43,44,45,46
-.venv/bin/python scripts/run_graphsage_experiment.py --config configs/graphsage.yaml --feature-mode region_risk_only --seeds 42,43,44,45,46
-.venv/bin/python scripts/run_graphsage_experiment.py --config configs/graphsage.yaml --feature-mode static_plus_graph --seeds 42,43,44,45,46
-# "full" already exists from the prior phase's runs -- no need to rerun.
+.venv/bin/python scripts/run_graphsage_experiment.py --config configs/graphsage_severity.yaml --feature-mode dynamic_only --seeds 42,43,44,45,46
+.venv/bin/python scripts/run_graphsage_experiment.py --config configs/graphsage_severity.yaml --feature-mode static_only --seeds 42,43,44,45,46
+.venv/bin/python scripts/run_graphsage_experiment.py --config configs/graphsage_severity.yaml --feature-mode region_risk_only --seeds 42,43,44,45,46
+# "full" (severity) already exists from the prior phase -- no need to rerun.
+# static_plus_graph is not worth rerunning -- see "Problem 2" above.
 ```
 
-Then build the table (substitute the actual timestamped directories each
-sweep prints):
+Watch the console output for the `WARNING: ... likely time-invariant`
+line — if any of these three unexpectedly trip it too, stop and
+investigate before trusting the numbers, the same way `static_plus_graph`
+was caught.
 
-```bash
-.venv/bin/python scripts/build_ablation_matrix.py \
-    --row "Majority" experiments/classical_gnn/<majority_run> \
-    --row "Logistic Regression" experiments/classical_gnn/<logreg_run> \
-    --row "Dynamic-only GraphSAGE" experiments/classical_gnn/*_hetero_graphsage_dynamic_only_seed* \
-    --row "Static-only GraphSAGE" experiments/classical_gnn/*_hetero_graphsage_static_only_seed* \
-    --row "Region/Risk-only GraphSAGE" experiments/classical_gnn/*_hetero_graphsage_region_risk_only_seed* \
-    --row "Static + Graph Structure" experiments/classical_gnn/*_hetero_graphsage_static_plus_graph_seed* \
-    --row "Full GraphSAGE" experiments/classical_gnn/*_hetero_graphsage_seed* \
-    --output experiments/classical_gnn/ablation_matrix.md
-```
-
-(Shell globs expand before Python sees them, so the `--row` glob patterns
-above need to actually match only the intended run directories — check
-with `ls` first if `full` and `dynamic_only` directory names could
-otherwise collide; they won't here since `_strategy_tag` inserts the mode
-name into the directory name itself.)
-
-**What this will actually answer** (plan §2 Q1/Q2): whether the model's
-persistence-detection ability (already established as strong) survives
-when the supplier's own dynamic features are removed (`static_only`) —
-if yes, that points to graph-neighbor information carrying the signal
-instead of the supplier's own history. And whether `region_risk_only`
-recovers ANY fresh-onset ranking signal above chance — this is the
-direct, cheap test of whether background risk exposure alone can hint at
-an upcoming disruption before any operational symptom appears, which the
-prior phase's manual check (ROC-AUC ~0.41–0.53 in the full model) left
-unresolved as to whether the signal exists but is unused, or doesn't
-exist at all.
+**What this will actually answer** (plan §2 Q1/Q2): whether
+`region_risk_only` recovers ANY fresh-onset ranking signal above chance —
+the direct, cheap test of whether background risk exposure alone can hint
+at an upcoming disruption before any operational symptom appears, which
+the prior phase's one-off manual check (ROC-AUC ~0.41–0.53 on the full
+model) left unresolved as to whether the signal exists but is unused, or
+genuinely doesn't exist.
 
 ## Not started (plan §19 priorities 3-8)
 
