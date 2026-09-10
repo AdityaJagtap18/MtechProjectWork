@@ -26,6 +26,7 @@ from .features import (
 )
 from .hetero_graph import HeteroGraphSnapshotBuilder
 from .preprocessing import FeaturePreprocessor, full_time_fit_mask, supplier_fit_mask
+from .reduction import ReducedGraphSnapshotBuilder, fit_supplier_reducer
 
 
 def _check_supplier_label_alignment(benchmark: BenchmarkData) -> None:
@@ -214,3 +215,61 @@ def prepare_for_cross_dataset_eval(config: GraphSAGEConfig, target_benchmark: Be
         config=config, benchmark=target_benchmark, frames=frames, examples=examples,
         preprocessor=source_preprocessor, snapshot_builder=snapshot_builder,
     )
+
+
+def prepare_reduced(
+    config: GraphSAGEConfig, reduction_method: str, n_components: int, columns: list[str] | None = None
+) -> tuple[PreparedData, object]:
+    """Loads the benchmark named in `config.dataset` off disk, then defers
+    to `prepare_reduced_from_benchmark`. See that function for details."""
+    benchmark = load_benchmark(config.dataset.benchmark_path, config.dataset.dataset_id)
+    return prepare_reduced_from_benchmark(config, benchmark, reduction_method, n_components, columns=columns)
+
+
+def prepare_reduced_from_benchmark(
+    config: GraphSAGEConfig, benchmark: BenchmarkData, reduction_method: str, n_components: int, columns: list[str] | None = None
+) -> tuple[PreparedData, object]:
+    """QGNN_FAIR_BENCHMARK_AND_IMPLEMENTATION_PLAN.md sections 3B/4-6/10-11:
+    the disk-free half of `prepare_reduced` (mirrors `prepare`/
+    `prepare_from_benchmark`'s own split, so tests can pass an in-memory
+    `BenchmarkData` -- see tests/conftest.py's `tiny_benchmark`). Identical
+    to `prepare_from_benchmark` in every respect (schema audit, feature
+    frames, prediction examples, split assignment, `FeaturePreprocessor`
+    fit on train only) except the SUPPLIER node's tensor is additionally
+    reduced to `n_components` dims by a `reduction.SupplierReducer` fit on
+    the exact same train-split rows. GraphSAGE-Reduced and QGNN-Reduced
+    both consume the returned `PreparedData` -- GraphSAGE-Reduced via the
+    ordinary, unmodified `HeteroGraphSAGE`/`train_graphsage`/
+    `evaluate_experiment` (it duck-types as a normal `PreparedData`, so
+    nothing downstream needs to know its snapshot_builder is a
+    `ReducedGraphSnapshotBuilder`); QGNN-Reduced via `qgnn.py`.
+
+    Returns `(prepared, reducer)` -- the fitted reducer is returned
+    separately (not stashed on `PreparedData`, whose schema is shared
+    infrastructure this phase must not modify) so callers can `.save()` it
+    and, for cross-dataset evaluation, reuse it on a target benchmark via
+    `prepare_reduced_for_cross_dataset_eval` without refitting."""
+    prepared = prepare_from_benchmark(config, benchmark)
+    reducer = fit_supplier_reducer(
+        reduction_method, n_components, prepared.frames,
+        prepared.examples[prepared.examples["split"] == "train"], columns=columns,
+    )
+    reduced_frame = reducer.transform(prepared.frames.frames[NodeType.SUPPLIER])
+    reduced_builder = ReducedGraphSnapshotBuilder(prepared.snapshot_builder, reduced_frame, n_components)
+    prepared.snapshot_builder = reduced_builder
+    return prepared, reducer
+
+
+def prepare_reduced_for_cross_dataset_eval(
+    config: GraphSAGEConfig, target_benchmark: BenchmarkData, source_preprocessor: FeaturePreprocessor, reducer: object
+) -> PreparedData:
+    """D2-equivalent for the reduced representation (plan §17): builds a
+    cross-dataset `PreparedData` for `target_benchmark` exactly like
+    `prepare_for_cross_dataset_eval`, then applies `reducer` (already fit
+    on the SOURCE dataset's train split by `prepare_reduced`) to the
+    target's own supplier frame -- never refit here."""
+    prepared = prepare_for_cross_dataset_eval(config, target_benchmark, source_preprocessor)
+    reduced_frame = reducer.transform(prepared.frames.frames[NodeType.SUPPLIER])
+    reduced_builder = ReducedGraphSnapshotBuilder(prepared.snapshot_builder, reduced_frame, reducer.n_components)
+    prepared.snapshot_builder = reduced_builder
+    return prepared
