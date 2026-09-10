@@ -79,5 +79,19 @@ def find_latest_cross_dataset_runs_by_feature_mode(
     return result
 
 
+def find_latest_graphsage_full_checkpoint(base_dir: str, seed: int) -> str:
+    """Finds the most recent existing GraphSAGE-Full run directory for one
+    model seed (the primary, full-feature-mode, temporal-split,
+    scm_v1_black_swan_seed43 runs already in experiments/classical_gnn/ --
+    QGNN-v2 reuses these as its frozen encoder, never retrains). Excludes
+    the dataset-tagged (`_seed44`/severity/scenario/etc.) and feature-mode-
+    tagged variants, matching only bare `*_hetero_graphsage_seed<N>`."""
+    pattern = os.path.join(base_dir, f"*_hetero_graphsage_seed{seed}")
+    matches = sorted(d for d in glob.glob(pattern) if re.fullmatch(rf".*_hetero_graphsage_seed{seed}", os.path.basename(d)))
+    if not matches:
+        raise FileNotFoundError(f"no primary GraphSAGE-Full run directory found for seed{seed} under {base_dir}")
+    return matches[-1]
+
+
 def short_dataset_id(dataset_id: str) -> str:
     return dataset_id.replace("scm_v1_black_swan_", "")
