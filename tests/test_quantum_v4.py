@@ -17,6 +17,7 @@ from scm_dataset.modeling.pipeline import prepare_from_benchmark
 from scm_dataset.modeling.qgnn_v2 import evaluate_v2, generate_predictions_v2, train_v2_head
 from scm_dataset.modeling.quantum import HybridQuantumHead, MatchedCapacityClassicalHead, build_v4_prepared
 from scm_dataset.modeling.quantum.circuit import build_quantum_layer
+from scm_dataset.modeling.quantum.train import train_v4_head_with_diagnostics
 from scm_dataset.modeling.train import train_graphsage
 
 from conftest import make_tiny_config
@@ -150,3 +151,47 @@ def test_train_v2_head_end_to_end_quantum_and_matched_classical(tiny_benchmark):
     assert any(not torch.equal(a, b) for a, b in zip(initial_weights, moved_weights))  # gradients actually reached the quantum circuit
     quantum_eval = evaluate_v2(quantum_result.model, v4prepared, v4prepared.config.threshold)
     assert "test" in quantum_eval.metrics_by_split
+
+
+def test_diagnostic_training_logs_quantum_grad_norm_for_quantum_head_only(tiny_benchmark):
+    """The instrumented loop (Phase 1 of the stability investigation) must
+    log a real, non-null quantum_grad_norm_mean for HybridQuantumHead
+    every epoch, and None for MatchedCapacityClassicalHead (no .quantum
+    submodule to inspect) -- and must produce the SAME optimizer/loss/
+    early-stopping behavior as train_v2_head, just with extra columns."""
+    v4prepared, _ = _tiny_v4_prepared(tiny_benchmark)
+    v4prepared.config.training.epochs = 4
+    v4prepared.config.training.early_stopping_patience = 10
+    in_dim = v4prepared.n_components
+
+    quantum = HybridQuantumHead(in_dim, n_qubits=4, n_layers=1)
+    result = train_v4_head_with_diagnostics(v4prepared, quantum, seed=42, verbose=False)
+    assert "quantum_grad_norm_mean" in result.history.columns
+    assert "train_pr_auc" in result.history.columns
+    assert result.history["quantum_grad_norm_mean"].notna().all()
+    assert (result.history["quantum_grad_norm_mean"] > 0).all()
+    assert result.history["train_pr_auc"].between(0.0, 1.0).all()
+
+    classical = MatchedCapacityClassicalHead(in_dim, n_qubits=4)
+    classical_result = train_v4_head_with_diagnostics(v4prepared, classical, seed=42, verbose=False)
+    assert classical_result.history["quantum_grad_norm_mean"].isna().all()
+    assert classical_result.history["reduce_grad_norm_mean"].notna().all()
+
+
+def test_diagnostic_training_matches_train_v2_head_optimization_behavior(tiny_benchmark):
+    """Same seed, same model config -> the instrumented loop must reach
+    the same best_val_pr_auc as train_v2_head (only logging differs, not
+    the optimizer/loss/early-stopping mechanics)."""
+    v4prepared, _ = _tiny_v4_prepared(tiny_benchmark)
+    v4prepared.config.training.epochs = 4
+    v4prepared.config.training.early_stopping_patience = 10
+    in_dim = v4prepared.n_components
+
+    from scm_dataset.modeling.qgnn_v2 import set_seed as v4_set_seed
+
+    v4_set_seed(42)  # must precede model construction so weight init is identical, not just training-time shuffling
+    plain_result = train_v2_head(v4prepared, MatchedCapacityClassicalHead(in_dim, n_qubits=4), seed=42, verbose=False)
+    v4_set_seed(42)
+    diag_result = train_v4_head_with_diagnostics(v4prepared, MatchedCapacityClassicalHead(in_dim, n_qubits=4), seed=42, verbose=False)
+    assert plain_result.best_val_pr_auc == diag_result.best_val_pr_auc
+    assert plain_result.best_epoch == diag_result.best_epoch

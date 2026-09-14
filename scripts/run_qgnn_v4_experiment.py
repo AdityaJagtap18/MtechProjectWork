@@ -37,6 +37,7 @@ from scm_dataset.modeling.quantum import (
     MatchedCapacityClassicalHead,
     build_v4_prepared,
     load_quantum_v4_config,
+    train_v4_head_with_diagnostics,
 )
 from scm_dataset.modeling.train import class_balance_summary
 
@@ -86,7 +87,10 @@ def main() -> None:
     parser.add_argument("--device", default=None)
     parser.add_argument("--epochs", type=int, default=None, help="Override config's training.epochs (useful for a smoke test).")
     parser.add_argument("--encoder-experiments-dir", default="experiments/classical_gnn", help="Where to find the existing GraphSAGE-Full checkpoints being reused as the frozen encoder.")
+    parser.add_argument("--diagnostics", action="store_true", help="Use quantum.train.train_v4_head_with_diagnostics instead of qgnn_v2.train_v2_head: logs per-epoch train PR-AUC and quantum/reduce-layer gradient norms into training_history.csv. Same optimizer/loss/early-stopping setup either way -- only the logging differs, so results are directly comparable to non-diagnostic runs.")
     args = parser.parse_args()
+
+    train_fn = train_v4_head_with_diagnostics if args.diagnostics else train_v2_head
 
     cfg = load_quantum_v4_config(args.config)
     config = cfg.base
@@ -132,7 +136,7 @@ def main() -> None:
         print("-- Matched-Capacity-Classical-v4 (RQ-Q3 control) --")
         set_seed(seed)  # must precede model construction so weight init is reproducible too, not just training-time shuffling
         classical_model = MatchedCapacityClassicalHead(in_dim, v4_arch.n_qubits)
-        classical_train = train_v2_head(v4prepared, classical_model, seed=seed, verbose=False)
+        classical_train = train_fn(v4prepared, classical_model, seed=seed, verbose=False)
         classical_eval = evaluate_v2(classical_train.model, v4prepared, config.threshold)
         c_test = classical_eval.metrics_by_split.get("test", {})
         c_params = sum(p.numel() for p in classical_model.parameters())
@@ -150,7 +154,7 @@ def main() -> None:
             in_dim, n_qubits=v4_arch.n_qubits, n_layers=v4_arch.n_layers,
             ansatz=v4_arch.ansatz, diff_method=v4_arch.diff_method, device_name=v4_arch.device,
         )
-        quantum_train = train_v2_head(v4prepared, quantum_model, seed=seed, verbose=False)
+        quantum_train = train_fn(v4prepared, quantum_model, seed=seed, verbose=False)
         quantum_eval = evaluate_v2(quantum_train.model, v4prepared, config.threshold)
         q_test = quantum_eval.metrics_by_split.get("test", {})
         resource_summary = quantum_train.model.quantum_resource_summary()

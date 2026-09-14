@@ -23,6 +23,7 @@ from .model import (
     build_v4_prepared,
     load_quantum_v4_config,
 )
+from .train import V4DiagnosticTrainResult, train_v4_head_with_diagnostics
 
 __all__ = [
     "build_quantum_layer",
@@ -32,4 +33,6 @@ __all__ = [
     "QuantumV4ExperimentConfig",
     "build_v4_prepared",
     "load_quantum_v4_config",
+    "V4DiagnosticTrainResult",
+    "train_v4_head_with_diagnostics",
 ]
