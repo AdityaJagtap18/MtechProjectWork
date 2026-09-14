@@ -79,17 +79,28 @@ def find_latest_cross_dataset_runs_by_feature_mode(
     return result
 
 
-def find_latest_graphsage_full_checkpoint(base_dir: str, seed: int) -> str:
+def find_latest_graphsage_full_checkpoint(base_dir: str, seed: int, split_suffix: str | None = None) -> str:
     """Finds the most recent existing GraphSAGE-Full run directory for one
-    model seed (the primary, full-feature-mode, temporal-split,
-    scm_v1_black_swan_seed43 runs already in experiments/classical_gnn/ --
-    QGNN-v2 reuses these as its frozen encoder, never retrains). Excludes
-    the dataset-tagged (`_seed44`/severity/scenario/etc.) and feature-mode-
-    tagged variants, matching only bare `*_hetero_graphsage_seed<N>`."""
-    pattern = os.path.join(base_dir, f"*_hetero_graphsage_seed{seed}")
-    matches = sorted(d for d in glob.glob(pattern) if re.fullmatch(rf".*_hetero_graphsage_seed{seed}", os.path.basename(d)))
+    model seed. `split_suffix=None` (default, unchanged from QGNN-v2's
+    original behaviour) matches only the bare, primary/temporal-split
+    `*_hetero_graphsage_seed<N>` runs -- excluding severity/scenario/
+    feature-mode-tagged variants -- since v2/v3 only ever reuse the
+    temporal-split encoder.
+
+    Passing `split_suffix="severity"` (or `"scenario"`) instead matches
+    `*_hetero_graphsage_severity_seed<N>`, the SEPARATELY-trained encoder
+    for that split (already produced by the classical GraphSAGE severity
+    run -- see configs/graphsage_severity.yaml). This matters: reusing the
+    temporal-trained encoder for a severity-split QGNN run would compare
+    against a different frozen representation than the classical severity
+    baseline itself was trained and evaluated with, confounding the
+    comparison. QGNN-v4's severity config (configs/qgnn_v4_severity.yaml)
+    relies on this to pick the matching encoder automatically."""
+    tag = f"hetero_graphsage_{split_suffix}_seed{seed}" if split_suffix else f"hetero_graphsage_seed{seed}"
+    pattern = os.path.join(base_dir, f"*_{tag}")
+    matches = sorted(d for d in glob.glob(pattern) if re.fullmatch(rf".*_{tag}", os.path.basename(d)))
     if not matches:
-        raise FileNotFoundError(f"no primary GraphSAGE-Full run directory found for seed{seed} under {base_dir}")
+        raise FileNotFoundError(f"no GraphSAGE-Full run directory found for {tag!r} under {base_dir}")
     return matches[-1]
 
 

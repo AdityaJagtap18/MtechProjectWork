@@ -1,0 +1,65 @@
+# QGNN-v4 severity-split config (PENNYLANE_QGNN_IMPLEMENTATION_PLAN.md
+# section 3/12.1: "run on the temporal split (primary) and the severity
+# split (the one with real fresh-onset examples)"). Identical to
+# configs/qgnn_v4.yaml except `split`, mirroring
+# configs/graphsage_severity.yaml's own relationship to configs/graphsage.yaml.
+# Train on severity 1-3, test on severity 4-5 (composition fixed by the
+# benchmark's own pre-generated splits/severity_split.csv).
+#
+# The frozen encoder for this run is resolved automatically to the
+# SEPARATELY-trained severity checkpoint (experiments/classical_gnn/
+# *_hetero_graphsage_severity_seed<N>, not the temporal one) --
+# scripts/run_qgnn_v4_experiment.py derives this from `split.strategy`
+# via _analysis_common.find_latest_graphsage_full_checkpoint's
+# `split_suffix` argument, so this config never needs to name a checkpoint
+# path directly.
+dataset:
+  benchmark_path: data/benchmark
+  dataset_id: scm_v1_black_swan_seed43
+
+prediction:
+  target: supplier_disrupted
+  horizon_periods: 4
+
+features:
+  rolling_windows: [4, 8, 12]
+  min_history_periods: 12
+  feature_mode: full
+
+split:
+  strategy: severity
+  generalization_val_frac: 0.15
+
+model:
+  name: hetero_graphsage
+  hidden_dim: 128
+  num_layers: 2
+  dropout: 0.20
+  aggregation: mean
+
+training:
+  epochs: 100
+  learning_rate: 0.001
+  weight_decay: 0.0001
+  early_stopping_patience: 10
+  class_weighting: balanced
+
+threshold:
+  policy: fixed
+  value: 0.5
+  target_value: 0.8
+
+experiment:
+  output_dir: experiments/qgnn_v4
+  seeds: [42, 43, 44, 45, 46]
+
+seed: 42
+
+# Same quantum_v4 architecture as the primary config -- only the split
+# changes, so the head comparison stays apples-to-apples across splits.
+quantum_v4:
+  n_qubits: 6
+  n_layers: 2
+  ansatz: strongly_entangling
+  diff_method: backprop
+  device: default.qubit
