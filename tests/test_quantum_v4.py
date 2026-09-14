@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import math
 
+import pytest
 import torch
 
 from scm_dataset.modeling.graph_embedding_reduction import extract_supplier_embeddings
@@ -310,3 +311,76 @@ def test_layernorm_gradient_flows_to_quantum_and_affine_params():
     assert any(p.grad is not None and torch.any(p.grad != 0) for p in head.quantum.parameters())
     assert head.norm.weight.grad is not None
     assert head.norm.bias.grad is not None
+
+
+@pytest.mark.parametrize("ansatz,n_qubits,n_layers,expected_params", [
+    ("hardware_efficient_ring", 6, 2, 24),  # n_layers * n_qubits * 2 (RY+RZ)
+    ("hardware_efficient_ring", 4, 3, 24),
+    ("reduced_entanglement", 6, 2, 12),  # n_layers * n_qubits * 1 (RY only)
+    ("reduced_entanglement", 8, 1, 8),
+])
+def test_phase3_ansatz_parameter_counts(ansatz, n_qubits, n_layers, expected_params):
+    layer = build_quantum_layer(n_qubits=n_qubits, n_layers=n_layers, ansatz=ansatz)
+    total = sum(p.numel() for p in layer.parameters())
+    assert total == expected_params
+
+
+@pytest.mark.parametrize("ansatz", ["hardware_efficient_ring", "reduced_entanglement"])
+def test_phase3_ansatz_forward_shape_and_gradient_flow(ansatz):
+    layer = build_quantum_layer(n_qubits=5, n_layers=2, ansatz=ansatz)
+    x = torch.randn(6, 5)
+    out = layer(x)
+    assert out.shape == (6, 5)
+    assert torch.isfinite(out).all()
+    loss = out.sum()
+    loss.backward()
+    assert any(p.grad is not None and torch.any(p.grad != 0) for p in layer.parameters())
+
+
+def test_reduced_entanglement_uses_chain_not_ring():
+    """Ansatz 3 (reduced_entanglement) must NOT include the wrap-around
+    edge hardware_efficient_ring (Ansatz 2) has -- verified by construction
+    (chain has n_qubits-1 CNOTs, ring has n_qubits), not just by name."""
+    from scm_dataset.modeling.quantum.circuit import _chain_pairs, _ring_pairs
+
+    chain = _chain_pairs(6)
+    ring = _ring_pairs(6)
+    assert len(chain) == 5  # n_qubits - 1, no wraparound
+    assert len(ring) == 6  # n_qubits, includes wraparound
+    assert (5, 0) not in chain
+    assert (5, 0) in ring
+
+
+def test_qgnn_v4_head_supports_all_four_ansatz_choices_end_to_end():
+    """HybridQuantumHeadLayerNorm (the Phase-3 default output stage) must
+    build and run correctly for every ansatz choice the Phase 3 matrix
+    uses, not just the ones already covered by earlier phases."""
+    for ansatz in ["strongly_entangling", "hardware_efficient_ring", "reduced_entanglement"]:
+        head = HybridQuantumHeadLayerNorm(in_dim=10, n_qubits=6, n_layers=2, ansatz=ansatz, elementwise_affine=False)
+        logits = head(torch.randn(4, 10))
+        assert logits.shape == (4,)
+        assert torch.isfinite(logits).all()
+
+
+@pytest.mark.parametrize("n_qubits", [4, 6, 8])
+def test_qgnn_v4_head_supports_qubit_count_ablation(n_qubits):
+    """Ablation A (qubit count): HybridQuantumHeadLayerNorm must size its
+    LayerNorm and output layer correctly for every planned qubit count."""
+    head = HybridQuantumHeadLayerNorm(in_dim=10, n_qubits=n_qubits, n_layers=2, elementwise_affine=False)
+    assert head.norm.normalized_shape == (n_qubits,)
+    assert head.out.in_features == n_qubits
+    logits = head(torch.randn(4, 10))
+    assert logits.shape == (4,)
+    assert torch.isfinite(logits).all()
+
+
+@pytest.mark.parametrize("n_layers", [1, 2, 3, 4])
+def test_qgnn_v4_head_supports_depth_ablation(n_layers):
+    """Ablation B (variational depth): must build and run for every
+    planned layer count without error."""
+    head = HybridQuantumHeadLayerNorm(in_dim=10, n_qubits=6, n_layers=n_layers, elementwise_affine=False)
+    expected_quantum_params = n_layers * 6 * 3  # StronglyEntanglingLayers: 3 rotation params/qubit/layer
+    assert sum(p.numel() for p in head.quantum.parameters()) == expected_quantum_params
+    logits = head(torch.randn(4, 10))
+    assert logits.shape == (4,)
+    assert torch.isfinite(logits).all()

@@ -111,7 +111,7 @@ def main() -> None:
     parser.add_argument("--seeds", default=None, help="Comma-separated model seeds; defaults to the config's experiment.seeds.")
     parser.add_argument("--n-qubits", type=int, default=None)
     parser.add_argument("--n-layers", type=int, default=None, help="Override quantum_v4.n_layers (variational layers).")
-    parser.add_argument("--ansatz", default=None, choices=["strongly_entangling", "basic_entangler"])
+    parser.add_argument("--ansatz", default=None, choices=["strongly_entangling", "basic_entangler", "hardware_efficient_ring", "reduced_entanglement"])
     parser.add_argument("--diff-method", default=None, choices=["backprop", "parameter-shift"])
     parser.add_argument("--device", default=None)
     parser.add_argument("--epochs", type=int, default=None, help="Override config's training.epochs (useful for a smoke test).")
