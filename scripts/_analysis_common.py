@@ -106,3 +106,67 @@ def find_latest_graphsage_full_checkpoint(base_dir: str, seed: int, split_suffix
 
 def short_dataset_id(dataset_id: str) -> str:
     return dataset_id.replace("scm_v1_black_swan_", "")
+
+
+def mcc_from_confusion(tp: int, fp: int, fn: int, tn: int) -> float | None:
+    """Matthews Correlation Coefficient from a confusion matrix.
+    `None` when the denominator is zero (a degenerate confusion matrix --
+    e.g. every prediction the same class), matching this project's
+    convention of reporting a metric as undefined rather than dividing by
+    zero."""
+    num = tp * tn - fp * fn
+    den = ((tp + fp) * (tp + fn) * (tn + fp) * (tn + fn)) ** 0.5
+    return float(num / den) if den > 0 else None
+
+
+def specificity_from_confusion(tn: int, fp: int) -> float | None:
+    return float(tn / (tn + fp)) if (tn + fp) > 0 else None
+
+
+def max_calibration_error(curve: dict) -> float | None:
+    """Maximum Calibration Error: the largest |observed - predicted| gap
+    across the bins of a `calibration.calibration_curve_data(...)` dict
+    (already saved in every run's `calibration.json` under `curve`) --
+    complements Expected Calibration Error (the weighted-average gap)
+    with the worst-case one."""
+    errs = [
+        abs(acc - conf)
+        for conf, acc, n in zip(curve["mean_predicted_probability"], curve["observed_frequency"], curve["bin_counts"])
+        if n > 0 and conf is not None and acc is not None
+    ]
+    return float(max(errs)) if errs else None
+
+
+def probability_histogram(probs) -> dict:
+    """Fraction of predictions falling in each of 6 standard probability
+    bins (<0.1, 0.1-0.3, 0.3-0.5, 0.5-0.7, 0.7-0.9, >0.9) -- used to check
+    whether a model's predictions have collapsed toward one region of
+    [0, 1] rather than spreading across it."""
+    bins = [(-0.001, 0.1), (0.1, 0.3), (0.3, 0.5), (0.5, 0.7), (0.7, 0.9), (0.9, 1.001)]
+    labels = ["lt_0.1", "0.1_0.3", "0.3_0.5", "0.5_0.7", "0.7_0.9", "gt_0.9"]
+    n = len(probs)
+    return {lab: float(((probs > lo) & (probs <= hi)).sum() / n) if n else None for lab, (lo, hi) in zip(labels, bins)}
+
+
+def load_period_severity(repo_root: str, dataset_id: str, horizon_periods: int) -> dict[int, int]:
+    """Reconstructs time -> max_active_severity exactly as
+    benchmark.splits.severity_split/_event_windows compute it internally,
+    from the raw events.csv the generator produced -- not stored anywhere
+    in the modeling pipeline's own saved outputs (severity_split.csv
+    keeps only the resulting binary train/test label). Verify against a
+    dataset's own splits/severity_split.csv before trusting this for a
+    new dataset_id -- see QGNN_V4_PHASE2B_EXTENDED_METRICS.md for the
+    zero-mismatch verification done for scm_v1_black_swan_seed43."""
+    events_path = os.path.join(repo_root, "data", "benchmark", dataset_id, "events", "events.csv")
+    if not os.path.exists(events_path):
+        return {}
+    events = pd.read_csv(events_path)
+    windows = []
+    for _, e in events.iterrows():
+        end = e["start_time"] + e["duration"] + e["recovery_delay"] + e["recovery_periods"]
+        windows.append((e["start_time"], end, e["severity"]))
+    result = {}
+    for t in range(horizon_periods):
+        active = [sev for start, end, sev in windows if start <= t < end]
+        result[t] = int(max(active, default=0))
+    return result

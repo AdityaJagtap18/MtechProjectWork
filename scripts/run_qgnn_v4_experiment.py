@@ -34,6 +34,7 @@ from scm_dataset.modeling.graph_embedding_reduction import (
 from scm_dataset.modeling.qgnn_v2 import evaluate_v2, set_seed, train_v2_head
 from scm_dataset.modeling.quantum import (
     HybridQuantumHead,
+    HybridQuantumHeadLayerNorm,
     HybridQuantumHeadOutputScale,
     MatchedCapacityClassicalHead,
     build_v4_prepared,
@@ -96,6 +97,10 @@ def _build_quantum_model(variant: str, in_dim: int, v4_arch, alpha_init: float):
         return HybridQuantumHeadOutputScale(in_dim, **common, alpha_init=alpha_init, use_bias=True, trainable_scale=True)
     if variant == "fixed_scale":
         return HybridQuantumHeadOutputScale(in_dim, **common, alpha_init=alpha_init, use_bias=False, trainable_scale=False)
+    if variant == "layernorm_noaffine":
+        return HybridQuantumHeadLayerNorm(in_dim, **common, elementwise_affine=False)
+    if variant == "layernorm_affine":
+        return HybridQuantumHeadLayerNorm(in_dim, **common, elementwise_affine=True)
     raise ValueError(f"unknown head variant {variant!r}")
 
 
@@ -113,7 +118,7 @@ def main() -> None:
     parser.add_argument("--patience", type=int, default=None, help="Override config's training.early_stopping_patience (Phase 2 stability investigation -- QGNN_V4_BENCHMARK.md/QGNN_V4_PHASE1_DIAGNOSTICS.md). max_epochs stays whatever --epochs/config already set; only the patience changes.")
     parser.add_argument("--encoder-experiments-dir", default="experiments/classical_gnn", help="Where to find the existing GraphSAGE-Full checkpoints being reused as the frozen encoder.")
     parser.add_argument("--diagnostics", action="store_true", help="Use quantum.train.train_v4_head_with_diagnostics instead of qgnn_v2.train_v2_head: logs per-epoch train PR-AUC and quantum/reduce-layer gradient norms into training_history.csv. Same optimizer/loss/early-stopping setup either way -- only the logging differs, so results are directly comparable to non-diagnostic runs.")
-    parser.add_argument("--head-variant", default="baseline", choices=["baseline", "scale", "scale_bias", "fixed_scale"], help="Phase 2b output-scale investigation (QGNN_V4_PHASE2B_REPORT.md). 'baseline'=unmodified HybridQuantumHead (default, identical to every prior phase). 'scale'=trainable alpha before the existing Linear(n_qubits,1). 'scale_bias'=trainable alpha+beta. 'fixed_scale'=non-trainable alpha at --alpha-init. Same qubits/layers/ansatz/encoder in every case.")
+    parser.add_argument("--head-variant", default="baseline", choices=["baseline", "scale", "scale_bias", "fixed_scale", "layernorm_noaffine", "layernorm_affine"], help="Phase 2b/2c output-scale and normalization investigation (QGNN_V4_PHASE2B_REPORT.md, QGNN_V4_PHASE2C_REPORT.md). 'baseline'=unmodified HybridQuantumHead (default, identical to every prior phase). 'scale'=trainable alpha before the existing Linear(n_qubits,1). 'scale_bias'=trainable alpha+beta. 'fixed_scale'=non-trainable alpha at --alpha-init. 'layernorm_noaffine'/'layernorm_affine'=LayerNorm(n_qubits) on the PauliZ output before Linear(n_qubits,1), without/with a learnable per-qubit scale+bias. Same qubits/layers/ansatz/encoder in every case.")
     parser.add_argument("--alpha-init", type=float, default=1.0, help="Initial (or, for --head-variant fixed_scale, fixed) value of the output-scale alpha. Ignored for --head-variant baseline.")
     parser.add_argument("--quantum-only", action="store_true", help="Skip the matched-capacity classical arm -- use when the classical control is unchanged from an already-saved baseline run (Phase 2b: classical is never modified, so re-running it would just reproduce existing results).")
     args = parser.parse_args()

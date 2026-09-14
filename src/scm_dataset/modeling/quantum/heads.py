@@ -151,6 +151,72 @@ class HybridQuantumHeadOutputScale(nn.Module):
         }
 
 
+class HybridQuantumHeadLayerNorm(nn.Module):
+    """Phase 2c of the QGNN-v4 stability investigation
+    (QGNN_V4_PHASE2B_REPORT.md's recommended next step,
+    QGNN_V4_PHASE2C_REPORT.md): replaces Phase 2b's scalar
+    `alpha`/`beta` reparameterization with a genuinely data-dependent
+    normalization of the raw PauliZ output, before the SAME
+    `Linear(n_qubits, 1)` output layer `HybridQuantumHead` already has:
+
+        HybridQuantumHead:              ... -> pauliz -> Linear(n_qubits,1) -> logit
+        HybridQuantumHeadLayerNorm:     ... -> pauliz -> LayerNorm(n_qubits) -> Linear(n_qubits,1) -> logit
+
+    Unlike Phase 2b's `alpha*pauliz+beta` (mathematically absorbable into
+    `Linear(n_qubits,1)`'s own weights -- see `HybridQuantumHeadOutputScale`'s
+    docstring), `LayerNorm` computes its normalizing statistics (mean,
+    variance) from each example's own 6 PauliZ values at that forward
+    pass -- input-dependent, not a fixed or globally-learned affine map.
+    This IS a genuine, non-redundant change to what the head computes,
+    not just a reparameterization of an already-reachable function.
+
+    `elementwise_affine=False` (variant A) applies pure normalization,
+    no learnable scale/shift. `elementwise_affine=True` (variant B) adds
+    a learnable per-qubit `weight`/`bias` on top (PyTorch's default
+    `LayerNorm` init: weight=1, bias=0 -- so at initialization, variant B
+    starts identical to variant A before any training)."""
+
+    def __init__(
+        self,
+        in_dim: int,
+        n_qubits: int = 6,
+        n_layers: int = 2,
+        ansatz: str = "strongly_entangling",
+        diff_method: str = "backprop",
+        device_name: str = "default.qubit",
+        elementwise_affine: bool = False,
+    ):
+        super().__init__()
+        self.n_qubits = n_qubits
+        self.n_layers = n_layers
+        self.ansatz = ansatz
+        self.device_name = device_name
+        self.elementwise_affine = elementwise_affine
+        self.reduce = nn.Linear(in_dim, n_qubits)
+        self.quantum = build_quantum_layer(n_qubits, n_layers, ansatz=ansatz, diff_method=diff_method, device_name=device_name)
+        self.norm = nn.LayerNorm(n_qubits, elementwise_affine=elementwise_affine)
+        self.out = nn.Linear(n_qubits, 1)
+
+    def forward(self, h: torch.Tensor) -> torch.Tensor:
+        angles = math.pi * torch.tanh(self.reduce(h))
+        q_out = self.quantum(angles).to(torch.float32)
+        normed = self.norm(q_out)
+        return self.out(normed).squeeze(-1)
+
+    def quantum_resource_summary(self) -> dict:
+        return {
+            "qubits": self.n_qubits,
+            "variational_layers": self.n_layers,
+            "ansatz": self.ansatz,
+            "trainable_quantum_parameters": sum(p.numel() for p in self.quantum.parameters()),
+            "total_trainable_parameters": sum(p.numel() for p in self.parameters()),
+            "observable": "PauliZ (one per qubit)",
+            "encoding": "AngleEmbedding, rotation=Y, angle = pi * tanh(Linear(h))",
+            "backend": self.device_name,
+            "normalization": {"type": "LayerNorm", "elementwise_affine": self.elementwise_affine},
+        }
+
+
 class MatchedCapacityClassicalHead(nn.Module):
     """RQ-Q3 fairness control (plan section 10): identical bottleneck
     width and forward shape to `HybridQuantumHead`, with the quantum

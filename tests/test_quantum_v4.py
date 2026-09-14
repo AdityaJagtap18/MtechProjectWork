@@ -15,7 +15,13 @@ import torch
 from scm_dataset.modeling.graph_embedding_reduction import extract_supplier_embeddings
 from scm_dataset.modeling.pipeline import prepare_from_benchmark
 from scm_dataset.modeling.qgnn_v2 import evaluate_v2, generate_predictions_v2, train_v2_head
-from scm_dataset.modeling.quantum import HybridQuantumHead, HybridQuantumHeadOutputScale, MatchedCapacityClassicalHead, build_v4_prepared
+from scm_dataset.modeling.quantum import (
+    HybridQuantumHead,
+    HybridQuantumHeadLayerNorm,
+    HybridQuantumHeadOutputScale,
+    MatchedCapacityClassicalHead,
+    build_v4_prepared,
+)
 from scm_dataset.modeling.quantum.circuit import build_quantum_layer
 from scm_dataset.modeling.quantum.train import train_v4_head_with_diagnostics
 from scm_dataset.modeling.train import train_graphsage
@@ -240,3 +246,67 @@ def test_fixed_scale_alpha_actually_scales_the_quantum_output():
     doubled = HybridQuantumHeadOutputScale(in_dim=6, n_qubits=4, n_layers=1, alpha_init=2.0, use_bias=False, trainable_scale=False)
     x = torch.randn(5, 6)
     assert not torch.allclose(unscaled(x), doubled(x))
+
+
+def test_layernorm_head_forward_shape_no_nans():
+    for affine in (False, True):
+        head = HybridQuantumHeadLayerNorm(in_dim=10, n_qubits=4, n_layers=1, elementwise_affine=affine)
+        logits = head(torch.randn(7, 10))
+        assert logits.shape == (7,)
+        assert torch.isfinite(logits).all()
+
+
+def test_layernorm_noaffine_actually_normalizes_per_example():
+    """LayerNorm(elementwise_affine=False) must produce, for every
+    example independently, ~zero mean and ~unit variance across the
+    n_qubits dimension -- the defining, genuinely data-dependent property
+    Phase 2c is testing (unlike Phase 2b's alpha/beta, whose effect is a
+    fixed global affine map)."""
+    head = HybridQuantumHeadLayerNorm(in_dim=6, n_qubits=4, n_layers=1, elementwise_affine=False)
+    with torch.no_grad():
+        angles = torch.pi * torch.tanh(head.reduce(torch.randn(9, 6)))
+        q_out = head.quantum(angles).to(torch.float32)
+        normed = head.norm(q_out)
+    assert torch.allclose(normed.mean(dim=-1), torch.zeros(9), atol=1e-5)
+    # LayerNorm's internal eps (1e-5) trades a small amount of variance
+    # for numerical stability, more visible with only 4 features -- 0.05
+    # tolerance confirms "approximately unit variance," not a stricter
+    # bound eps itself doesn't promise.
+    assert torch.allclose(normed.std(dim=-1, unbiased=False), torch.ones(9), atol=0.05)
+
+
+def test_layernorm_affine_has_no_effect_at_initialization():
+    """PyTorch's LayerNorm default init is weight=1, bias=0 -- so at
+    initialization (before any training step), elementwise_affine=True
+    must produce byte-identical output to elementwise_affine=False, given
+    the same upstream weights. This is the LayerNorm analogue of Phase
+    2b's alpha=1/no-bias-equals-baseline test."""
+    torch.manual_seed(0)
+    noaffine = HybridQuantumHeadLayerNorm(in_dim=10, n_qubits=4, n_layers=1, elementwise_affine=False)
+    torch.manual_seed(0)
+    affine = HybridQuantumHeadLayerNorm(in_dim=10, n_qubits=4, n_layers=1, elementwise_affine=True)
+    x = torch.randn(6, 10)
+    assert torch.allclose(noaffine(x), affine(x))
+
+
+def test_layernorm_affine_params_trainable_noaffine_has_none():
+    affine = HybridQuantumHeadLayerNorm(in_dim=6, n_qubits=4, n_layers=1, elementwise_affine=True)
+    assert affine.norm.weight is not None and affine.norm.weight.requires_grad
+    assert affine.norm.bias is not None and affine.norm.bias.requires_grad
+
+    noaffine = HybridQuantumHeadLayerNorm(in_dim=6, n_qubits=4, n_layers=1, elementwise_affine=False)
+    assert noaffine.norm.weight is None
+    assert noaffine.norm.bias is None
+    param_names = [n for n, _ in noaffine.named_parameters()]
+    assert not any(n.startswith("norm.") for n in param_names)
+
+
+def test_layernorm_gradient_flows_to_quantum_and_affine_params():
+    head = HybridQuantumHeadLayerNorm(in_dim=6, n_qubits=4, n_layers=1, elementwise_affine=True)
+    x = torch.randn(8, 6)
+    y = torch.randint(0, 2, (8,)).float()
+    loss = torch.nn.functional.binary_cross_entropy_with_logits(head(x), y)
+    loss.backward()
+    assert any(p.grad is not None and torch.any(p.grad != 0) for p in head.quantum.parameters())
+    assert head.norm.weight.grad is not None
+    assert head.norm.bias.grad is not None

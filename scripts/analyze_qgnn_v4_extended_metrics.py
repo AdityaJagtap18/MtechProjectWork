@@ -39,6 +39,14 @@ import numpy as np
 import pandas as pd
 import yaml
 
+from _analysis_common import (
+    max_calibration_error,
+    mcc_from_confusion,
+    probability_histogram,
+    specificity_from_confusion,
+)
+from _analysis_common import load_period_severity as _load_period_severity
+
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 EXPERIMENTS_DIR = os.path.join(REPO_ROOT, "experiments", "qgnn_v4")
 OUT_DIR = os.path.join(EXPERIMENTS_DIR, "phase2b_extended_metrics")
@@ -63,50 +71,8 @@ def find_run_dir(tag: str, seed: int, split_strategy: str) -> str:
     raise FileNotFoundError(f"no run directory for tag={tag!r} seed={seed} split.strategy={split_strategy!r}")
 
 
-def mcc_from_confusion(tp: int, fp: int, fn: int, tn: int) -> float | None:
-    num = tp * tn - fp * fn
-    den = ((tp + fp) * (tp + fn) * (tn + fp) * (tn + fn)) ** 0.5
-    return float(num / den) if den > 0 else None
-
-
-def specificity_from_confusion(tn: int, fp: int) -> float | None:
-    return float(tn / (tn + fp)) if (tn + fp) > 0 else None
-
-
-def max_calibration_error(curve: dict) -> float | None:
-    errs = [
-        abs(acc - conf)
-        for conf, acc, n in zip(curve["mean_predicted_probability"], curve["observed_frequency"], curve["bin_counts"])
-        if n > 0 and conf is not None and acc is not None
-    ]
-    return float(max(errs)) if errs else None
-
-
-def probability_histogram(probs: pd.Series) -> dict:
-    bins = [(-0.001, 0.1), (0.1, 0.3), (0.3, 0.5), (0.5, 0.7), (0.7, 0.9), (0.9, 1.001)]
-    labels = ["lt_0.1", "0.1_0.3", "0.3_0.5", "0.5_0.7", "0.7_0.9", "gt_0.9"]
-    n = len(probs)
-    return {lab: float(((probs > lo) & (probs <= hi)).sum() / n) if n else None for lab, (lo, hi) in zip(labels, bins)}
-
-
 def load_period_severity(dataset_id: str, horizon_periods: int) -> dict[int, int]:
-    """Reconstructs time -> max_active_severity exactly as
-    benchmark.splits.severity_split/_event_windows compute it internally,
-    from the raw events.csv the generator produced -- not stored anywhere
-    in the modeling pipeline's own saved outputs."""
-    events_path = os.path.join(REPO_ROOT, "data", "benchmark", dataset_id, "events", "events.csv")
-    if not os.path.exists(events_path):
-        return {}
-    events = pd.read_csv(events_path)
-    windows = []
-    for _, e in events.iterrows():
-        end = e["start_time"] + e["duration"] + e["recovery_delay"] + e["recovery_periods"]
-        windows.append((e["start_time"], end, e["severity"]))
-    result = {}
-    for t in range(horizon_periods):
-        active = [sev for start, end, sev in windows if start <= t < end]
-        result[t] = int(max(active, default=0))
-    return result
+    return _load_period_severity(REPO_ROOT, dataset_id, horizon_periods)
 
 
 def load_run(d: str) -> dict:
