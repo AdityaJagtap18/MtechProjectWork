@@ -86,6 +86,7 @@ def main() -> None:
     parser.add_argument("--diff-method", default=None, choices=["backprop", "parameter-shift"])
     parser.add_argument("--device", default=None)
     parser.add_argument("--epochs", type=int, default=None, help="Override config's training.epochs (useful for a smoke test).")
+    parser.add_argument("--patience", type=int, default=None, help="Override config's training.early_stopping_patience (Phase 2 stability investigation -- QGNN_V4_BENCHMARK.md/QGNN_V4_PHASE1_DIAGNOSTICS.md). max_epochs stays whatever --epochs/config already set; only the patience changes.")
     parser.add_argument("--encoder-experiments-dir", default="experiments/classical_gnn", help="Where to find the existing GraphSAGE-Full checkpoints being reused as the frozen encoder.")
     parser.add_argument("--diagnostics", action="store_true", help="Use quantum.train.train_v4_head_with_diagnostics instead of qgnn_v2.train_v2_head: logs per-epoch train PR-AUC and quantum/reduce-layer gradient norms into training_history.csv. Same optimizer/loss/early-stopping setup either way -- only the logging differs, so results are directly comparable to non-diagnostic runs.")
     args = parser.parse_args()
@@ -107,9 +108,11 @@ def main() -> None:
         v4_arch.device = args.device
     if args.epochs:
         config.training.epochs = args.epochs
+    if args.patience:
+        config.training.early_stopping_patience = args.patience
     seeds = [int(s) for s in args.seeds.split(",")] if args.seeds else list(config.experiment.seeds)
 
-    print(f"QGNN-v4: dataset={config.dataset.dataset_id} n_qubits={v4_arch.n_qubits} n_layers={v4_arch.n_layers} ansatz={v4_arch.ansatz} diff_method={v4_arch.diff_method} device={v4_arch.device}")
+    print(f"QGNN-v4: dataset={config.dataset.dataset_id} n_qubits={v4_arch.n_qubits} n_layers={v4_arch.n_layers} ansatz={v4_arch.ansatz} diff_method={v4_arch.diff_method} device={v4_arch.device} epochs={config.training.epochs} patience={config.training.early_stopping_patience}")
 
     classical_pr_aucs, quantum_pr_aucs = [], []
 
