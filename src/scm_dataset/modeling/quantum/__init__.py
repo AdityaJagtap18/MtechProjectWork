@@ -16,7 +16,7 @@ fairness ablation.
 from __future__ import annotations
 
 from .circuit import build_quantum_layer
-from .heads import HybridQuantumHead, MatchedCapacityClassicalHead
+from .heads import HybridQuantumHead, HybridQuantumHeadOutputScale, MatchedCapacityClassicalHead
 from .model import (
     QuantumV4ArchConfig,
     QuantumV4ExperimentConfig,
@@ -28,6 +28,7 @@ from .train import V4DiagnosticTrainResult, train_v4_head_with_diagnostics
 __all__ = [
     "build_quantum_layer",
     "HybridQuantumHead",
+    "HybridQuantumHeadOutputScale",
     "MatchedCapacityClassicalHead",
     "QuantumV4ArchConfig",
     "QuantumV4ExperimentConfig",

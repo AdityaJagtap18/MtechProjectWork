@@ -15,7 +15,7 @@ import torch
 from scm_dataset.modeling.graph_embedding_reduction import extract_supplier_embeddings
 from scm_dataset.modeling.pipeline import prepare_from_benchmark
 from scm_dataset.modeling.qgnn_v2 import evaluate_v2, generate_predictions_v2, train_v2_head
-from scm_dataset.modeling.quantum import HybridQuantumHead, MatchedCapacityClassicalHead, build_v4_prepared
+from scm_dataset.modeling.quantum import HybridQuantumHead, HybridQuantumHeadOutputScale, MatchedCapacityClassicalHead, build_v4_prepared
 from scm_dataset.modeling.quantum.circuit import build_quantum_layer
 from scm_dataset.modeling.quantum.train import train_v4_head_with_diagnostics
 from scm_dataset.modeling.train import train_graphsage
@@ -195,3 +195,48 @@ def test_diagnostic_training_matches_train_v2_head_optimization_behavior(tiny_be
     diag_result = train_v4_head_with_diagnostics(v4prepared, MatchedCapacityClassicalHead(in_dim, n_qubits=4), seed=42, verbose=False)
     assert plain_result.best_val_pr_auc == diag_result.best_val_pr_auc
     assert plain_result.best_epoch == diag_result.best_epoch
+
+
+def test_output_scale_head_at_alpha_1_matches_baseline_head_exactly():
+    """Phase 2b's core methodological claim (heads.py docstring): alpha=1,
+    no bias, is mathematically a no-op -- HybridQuantumHeadOutputScale must
+    reduce to byte-identical output to plain HybridQuantumHead when given
+    the same weights. Verifies the wiring, not just the math on paper."""
+    torch.manual_seed(0)
+    baseline = HybridQuantumHead(in_dim=10, n_qubits=4, n_layers=1)
+    torch.manual_seed(0)
+    scaled = HybridQuantumHeadOutputScale(in_dim=10, n_qubits=4, n_layers=1, alpha_init=1.0, use_bias=False, trainable_scale=True)
+    x = torch.randn(6, 10)
+    assert torch.allclose(baseline(x), scaled(x))
+
+
+def test_output_scale_trainable_alpha_receives_gradient():
+    head = HybridQuantumHeadOutputScale(in_dim=6, n_qubits=4, n_layers=1, alpha_init=1.0, use_bias=True, trainable_scale=True)
+    x = torch.randn(8, 6)
+    y = torch.randint(0, 2, (8,)).float()
+    loss = torch.nn.functional.binary_cross_entropy_with_logits(head(x), y)
+    loss.backward()
+    assert head.alpha.grad is not None and head.alpha.grad.item() != 0
+    assert head.beta.grad is not None
+
+
+def test_fixed_scale_alpha_is_not_a_trainable_parameter():
+    head = HybridQuantumHeadOutputScale(in_dim=6, n_qubits=4, n_layers=1, alpha_init=0.5, use_bias=False, trainable_scale=False)
+    param_names = [n for n, _ in head.named_parameters()]
+    assert "alpha" not in param_names  # registered as a buffer, not a Parameter
+    assert head.alpha.item() == 0.5
+    x = torch.randn(5, 6)
+    y = torch.randint(0, 2, (5,)).float()
+    loss = torch.nn.functional.binary_cross_entropy_with_logits(head(x), y)
+    loss.backward()  # must not raise even though alpha has no grad
+    assert head.reduce.weight.grad is not None  # the rest of the head still trains normally
+
+
+def test_fixed_scale_alpha_actually_scales_the_quantum_output():
+    """alpha != 1 must change the forward pass, not be silently ignored."""
+    torch.manual_seed(0)
+    unscaled = HybridQuantumHeadOutputScale(in_dim=6, n_qubits=4, n_layers=1, alpha_init=1.0, use_bias=False, trainable_scale=False)
+    torch.manual_seed(0)
+    doubled = HybridQuantumHeadOutputScale(in_dim=6, n_qubits=4, n_layers=1, alpha_init=2.0, use_bias=False, trainable_scale=False)
+    x = torch.randn(5, 6)
+    assert not torch.allclose(unscaled(x), doubled(x))

@@ -66,6 +66,91 @@ class HybridQuantumHead(nn.Module):
         }
 
 
+class HybridQuantumHeadOutputScale(nn.Module):
+    """Phase 2b of the QGNN-v4 stability investigation
+    (QGNN_V4_PHASE1_DIAGNOSTICS.md, QGNN_V4_PHASE2_REPORT.md): tests
+    whether the instability/calibration gap found in Phase 1 is an
+    output-scale / optimization-dynamics issue rather than an
+    expressiveness one, by inserting a scale (and optionally bias)
+    transform on the raw PauliZ output, before the SAME `Linear(n_qubits, 1)`
+    output layer `HybridQuantumHead` already has:
+
+        HybridQuantumHead:            ... -> pauliz -> Linear(n_qubits,1) -> logit
+        HybridQuantumHeadOutputScale: ... -> pauliz -> alpha*pauliz[+beta] -> Linear(n_qubits,1) -> logit
+
+    Methodological note, stated explicitly because it matters for how any
+    result here should be read: `alpha`/`beta` are mathematically
+    redundant with `Linear(n_qubits,1)`'s own weights/bias in the
+    infinite-training-time function-class sense -- `alpha*Linear(x)+beta`
+    is itself exactly representable as a DIFFERENT `Linear(n_qubits,1)`.
+    This is deliberately NOT an expressiveness change (the investigation
+    explicitly rules out architecture changes at this phase). What it CAN
+    change is the optimization trajectory -- a different effective
+    initial scale and gradient magnitude on the pre-`Linear`
+    representation -- which is the actual hypothesis under test, and is
+    the same reason `LayerNorm`/`BatchNorm`'s learnable affine parameters
+    matter in practice despite being technically absorbable into a
+    following linear layer. Any PR-AUC/calibration difference found here
+    should be attributed to optimization dynamics, not added capacity.
+
+    `trainable_scale=True` makes `alpha` (and `beta`, if `use_bias=True`)
+    an `nn.Parameter`. `trainable_scale=False` fixes `alpha` as a
+    non-trainable constant (Phase 2b's "fixed output scale" experiment --
+    the value must be chosen without looking at test performance, per the
+    investigation's own rule; this class only exposes the mechanism, the
+    caller picks the value)."""
+
+    def __init__(
+        self,
+        in_dim: int,
+        n_qubits: int = 6,
+        n_layers: int = 2,
+        ansatz: str = "strongly_entangling",
+        diff_method: str = "backprop",
+        device_name: str = "default.qubit",
+        alpha_init: float = 1.0,
+        use_bias: bool = False,
+        trainable_scale: bool = True,
+    ):
+        super().__init__()
+        self.n_qubits = n_qubits
+        self.n_layers = n_layers
+        self.ansatz = ansatz
+        self.device_name = device_name
+        self.trainable_scale = trainable_scale
+        self.use_bias = use_bias
+        self.alpha_init = alpha_init
+        self.reduce = nn.Linear(in_dim, n_qubits)
+        self.quantum = build_quantum_layer(n_qubits, n_layers, ansatz=ansatz, diff_method=diff_method, device_name=device_name)
+        self.out = nn.Linear(n_qubits, 1)
+        if trainable_scale:
+            self.alpha = nn.Parameter(torch.tensor(float(alpha_init)))
+        else:
+            self.register_buffer("alpha", torch.tensor(float(alpha_init)))
+        self.beta = nn.Parameter(torch.tensor(0.0)) if use_bias else None
+
+    def forward(self, h: torch.Tensor) -> torch.Tensor:
+        angles = math.pi * torch.tanh(self.reduce(h))
+        q_out = self.quantum(angles).to(torch.float32)
+        scaled = self.alpha * q_out
+        if self.beta is not None:
+            scaled = scaled + self.beta
+        return self.out(scaled).squeeze(-1)
+
+    def quantum_resource_summary(self) -> dict:
+        return {
+            "qubits": self.n_qubits,
+            "variational_layers": self.n_layers,
+            "ansatz": self.ansatz,
+            "trainable_quantum_parameters": sum(p.numel() for p in self.quantum.parameters()),
+            "total_trainable_parameters": sum(p.numel() for p in self.parameters()),
+            "observable": "PauliZ (one per qubit)",
+            "encoding": "AngleEmbedding, rotation=Y, angle = pi * tanh(Linear(h))",
+            "backend": self.device_name,
+            "output_scale": {"trainable": self.trainable_scale, "alpha_init": self.alpha_init, "use_bias": self.use_bias},
+        }
+
+
 class MatchedCapacityClassicalHead(nn.Module):
     """RQ-Q3 fairness control (plan section 10): identical bottleneck
     width and forward shape to `HybridQuantumHead`, with the quantum

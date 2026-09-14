@@ -34,6 +34,7 @@ from scm_dataset.modeling.graph_embedding_reduction import (
 from scm_dataset.modeling.qgnn_v2 import evaluate_v2, set_seed, train_v2_head
 from scm_dataset.modeling.quantum import (
     HybridQuantumHead,
+    HybridQuantumHeadOutputScale,
     MatchedCapacityClassicalHead,
     build_v4_prepared,
     load_quantum_v4_config,
@@ -75,6 +76,29 @@ def _fake_frames():
     return NodeFeatureFrames(frames={}, numeric_columns={}, categorical_columns={})
 
 
+def _build_quantum_model(variant: str, in_dim: int, v4_arch, alpha_init: float):
+    """Phase 2b (output-scale/calibration investigation, QGNN_V4_PHASE2B_REPORT.md):
+    `variant="baseline"` is the unmodified HybridQuantumHead (identical to
+    every prior phase). The other three variants all use
+    HybridQuantumHeadOutputScale with the SAME qubits/layers/ansatz --
+    only the scale/bias mechanism on the pre-Linear(n_qubits,1)
+    representation differs. No architecture, encoding, or circuit change
+    in any variant."""
+    common = dict(
+        n_qubits=v4_arch.n_qubits, n_layers=v4_arch.n_layers,
+        ansatz=v4_arch.ansatz, diff_method=v4_arch.diff_method, device_name=v4_arch.device,
+    )
+    if variant == "baseline":
+        return HybridQuantumHead(in_dim, **common)
+    if variant == "scale":
+        return HybridQuantumHeadOutputScale(in_dim, **common, alpha_init=alpha_init, use_bias=False, trainable_scale=True)
+    if variant == "scale_bias":
+        return HybridQuantumHeadOutputScale(in_dim, **common, alpha_init=alpha_init, use_bias=True, trainable_scale=True)
+    if variant == "fixed_scale":
+        return HybridQuantumHeadOutputScale(in_dim, **common, alpha_init=alpha_init, use_bias=False, trainable_scale=False)
+    raise ValueError(f"unknown head variant {variant!r}")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--config", default="configs/qgnn_v4.yaml")
@@ -89,6 +113,9 @@ def main() -> None:
     parser.add_argument("--patience", type=int, default=None, help="Override config's training.early_stopping_patience (Phase 2 stability investigation -- QGNN_V4_BENCHMARK.md/QGNN_V4_PHASE1_DIAGNOSTICS.md). max_epochs stays whatever --epochs/config already set; only the patience changes.")
     parser.add_argument("--encoder-experiments-dir", default="experiments/classical_gnn", help="Where to find the existing GraphSAGE-Full checkpoints being reused as the frozen encoder.")
     parser.add_argument("--diagnostics", action="store_true", help="Use quantum.train.train_v4_head_with_diagnostics instead of qgnn_v2.train_v2_head: logs per-epoch train PR-AUC and quantum/reduce-layer gradient norms into training_history.csv. Same optimizer/loss/early-stopping setup either way -- only the logging differs, so results are directly comparable to non-diagnostic runs.")
+    parser.add_argument("--head-variant", default="baseline", choices=["baseline", "scale", "scale_bias", "fixed_scale"], help="Phase 2b output-scale investigation (QGNN_V4_PHASE2B_REPORT.md). 'baseline'=unmodified HybridQuantumHead (default, identical to every prior phase). 'scale'=trainable alpha before the existing Linear(n_qubits,1). 'scale_bias'=trainable alpha+beta. 'fixed_scale'=non-trainable alpha at --alpha-init. Same qubits/layers/ansatz/encoder in every case.")
+    parser.add_argument("--alpha-init", type=float, default=1.0, help="Initial (or, for --head-variant fixed_scale, fixed) value of the output-scale alpha. Ignored for --head-variant baseline.")
+    parser.add_argument("--quantum-only", action="store_true", help="Skip the matched-capacity classical arm -- use when the classical control is unchanged from an already-saved baseline run (Phase 2b: classical is never modified, so re-running it would just reproduce existing results).")
     args = parser.parse_args()
 
     train_fn = train_v4_head_with_diagnostics if args.diagnostics else train_v2_head
@@ -136,27 +163,25 @@ def main() -> None:
         v4prepared = build_v4_prepared(config, benchmark, prepared_full.examples, embedding_frame)
         in_dim = embedding_frame.shape[1]
 
-        print("-- Matched-Capacity-Classical-v4 (RQ-Q3 control) --")
-        set_seed(seed)  # must precede model construction so weight init is reproducible too, not just training-time shuffling
-        classical_model = MatchedCapacityClassicalHead(in_dim, v4_arch.n_qubits)
-        classical_train = train_fn(v4prepared, classical_model, seed=seed, verbose=False)
-        classical_eval = evaluate_v2(classical_train.model, v4prepared, config.threshold)
-        c_test = classical_eval.metrics_by_split.get("test", {})
-        c_params = sum(p.numel() for p in classical_model.parameters())
-        print(f"  test: pr_auc={c_test.get('pr_auc')} roc_auc={c_test.get('roc_auc')}  params={c_params}")
-        c_run_dir = new_run_dir(config.experiment.output_dir, f"{args.tag}_matched_classical_seed{seed}")
-        write_json(os.path.join(c_run_dir, "encoder_checkpoint.json"), {"checkpoint_dir": checkpoint_dir})
-        _save_run(c_run_dir, config, classical_train.model, "matched_capacity_classical_v4", v4prepared, classical_train, classical_eval, seed, {"n_qubits": v4_arch.n_qubits, "in_dim": in_dim, "encoder_checkpoint": checkpoint_dir, "total_trainable_parameters": c_params})
-        print(f"  saved -> {c_run_dir}")
-        if c_test.get("pr_auc") is not None:
-            classical_pr_aucs.append(c_test["pr_auc"])
+        if not args.quantum_only:
+            print("-- Matched-Capacity-Classical-v4 (RQ-Q3 control) --")
+            set_seed(seed)  # must precede model construction so weight init is reproducible too, not just training-time shuffling
+            classical_model = MatchedCapacityClassicalHead(in_dim, v4_arch.n_qubits)
+            classical_train = train_fn(v4prepared, classical_model, seed=seed, verbose=False)
+            classical_eval = evaluate_v2(classical_train.model, v4prepared, config.threshold)
+            c_test = classical_eval.metrics_by_split.get("test", {})
+            c_params = sum(p.numel() for p in classical_model.parameters())
+            print(f"  test: pr_auc={c_test.get('pr_auc')} roc_auc={c_test.get('roc_auc')}  params={c_params}")
+            c_run_dir = new_run_dir(config.experiment.output_dir, f"{args.tag}_matched_classical_seed{seed}")
+            write_json(os.path.join(c_run_dir, "encoder_checkpoint.json"), {"checkpoint_dir": checkpoint_dir})
+            _save_run(c_run_dir, config, classical_train.model, "matched_capacity_classical_v4", v4prepared, classical_train, classical_eval, seed, {"n_qubits": v4_arch.n_qubits, "in_dim": in_dim, "encoder_checkpoint": checkpoint_dir, "total_trainable_parameters": c_params})
+            print(f"  saved -> {c_run_dir}")
+            if c_test.get("pr_auc") is not None:
+                classical_pr_aucs.append(c_test["pr_auc"])
 
-        print(f"-- Hybrid-Quantum-v4 (n_qubits={v4_arch.n_qubits}, n_layers={v4_arch.n_layers}, ansatz={v4_arch.ansatz}) --")
+        print(f"-- Hybrid-Quantum-v4 (variant={args.head_variant}, n_qubits={v4_arch.n_qubits}, n_layers={v4_arch.n_layers}, ansatz={v4_arch.ansatz}) --")
         set_seed(seed)
-        quantum_model = HybridQuantumHead(
-            in_dim, n_qubits=v4_arch.n_qubits, n_layers=v4_arch.n_layers,
-            ansatz=v4_arch.ansatz, diff_method=v4_arch.diff_method, device_name=v4_arch.device,
-        )
+        quantum_model = _build_quantum_model(args.head_variant, in_dim, v4_arch, args.alpha_init)
         quantum_train = train_fn(v4prepared, quantum_model, seed=seed, verbose=False)
         quantum_eval = evaluate_v2(quantum_train.model, v4prepared, config.threshold)
         q_test = quantum_eval.metrics_by_split.get("test", {})
@@ -166,7 +191,7 @@ def main() -> None:
         q_run_dir = new_run_dir(config.experiment.output_dir, f"{args.tag}_quantum_seed{seed}")
         write_json(os.path.join(q_run_dir, "encoder_checkpoint.json"), {"checkpoint_dir": checkpoint_dir})
         write_json(os.path.join(q_run_dir, "quantum_resource_summary.json"), resource_summary)
-        _save_run(q_run_dir, config, quantum_train.model, "hybrid_quantum_v4", v4prepared, quantum_train, quantum_eval, seed, {"in_dim": in_dim, "encoder_checkpoint": checkpoint_dir, "quantum": resource_summary})
+        _save_run(q_run_dir, config, quantum_train.model, "hybrid_quantum_v4", v4prepared, quantum_train, quantum_eval, seed, {"in_dim": in_dim, "encoder_checkpoint": checkpoint_dir, "quantum": resource_summary, "head_variant": args.head_variant, "alpha_init": args.alpha_init})
         print(f"  saved -> {q_run_dir}")
         if q_test.get("pr_auc") is not None:
             quantum_pr_aucs.append(q_test["pr_auc"])
