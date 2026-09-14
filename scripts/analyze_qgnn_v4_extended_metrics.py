@@ -57,6 +57,8 @@ CONFIGS = [
     ("scale_bias", "phase2b_scale_bias", "phase2b_scale_bias"),
     ("fixed0.5", "phase2b_fixed0.5", "phase2b_fixed0.5"),
     ("fixed2.0", "phase2b_fixed2.0", "phase2b_fixed2.0"),
+    ("layernorm_noaffine", "phase2c_layernorm_noaffine", "phase2c_layernorm_noaffine"),
+    ("layernorm_affine", "phase2c_layernorm_affine", "phase2c_layernorm_affine"),
 ]
 SEEDS = [42, 43, 44, 45, 46]
 STABILITY_METRICS = ["pr_auc", "roc_auc", "f1", "recall", "precision", "brier_score", "ece"]
