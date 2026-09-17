@@ -24,17 +24,27 @@ and its performance relative to a full classical GraphSAGE-Full baseline
 on a synthetic supply-chain disruption-prediction benchmark. **No
 architectural, initialization, encoding, or ansatz modification tested
 produced a reproducible, seed-robust improvement over the standing QGNN-v4
-reference, and the classical GraphSAGE-Full baseline remained stronger on
-the Severity/OOD generalization condition throughout.** The strongest,
-most decisive evidence generated was not about the quantum circuit at
-all: a plain logistic regression on the same frozen embedding already
-matches or exceeds every QGNN configuration's severity performance,
-demonstrating that the bottleneck is not (or not only) the quantum head's
-expressiveness — a combination of the severity split's genuine
+reference. Among the end-to-end, fully-trained models compared throughout
+this project — classical GraphSAGE-Full vs. every QGNN-v4 configuration —
+the classical GraphSAGE-Full baseline remained stronger on the
+Severity/OOD generalization condition throughout.** This is an
+end-to-end-model finding specifically, and it requires one important
+qualification: a plain logistic regression trained only as a
+*representation diagnostic* (Stage 1) — not a competing end-to-end
+model, and not trained with the same protocol as either full model — on
+the same frozen embedding reaches severity PR-AUC 0.465±0.005, which is
+numerically **above both** the classical end-to-end reference (0.449) and
+every QGNN-v4 configuration tested. This does not mean "the logistic
+regression is the best model" in this project's own end-to-end sense; it
+means the frozen embedding already carries more severity-relevant signal
+than either full downstream head (classical or quantum) currently
+extracts from it — the bottleneck is not (or not only) the quantum head's
+expressiveness, and is not fully explained by the classical head's own
+architecture either. A combination of the severity split's genuine
 distribution shift (Stage 1) and the specific downstream training/
-generalization behavior of every head tested (quantum and classical
-alike) better explains the observed gap than any single architectural
-choice investigated.
+generalization behavior of every *full* head tested (quantum and
+classical alike) better explains the observed gap than any single
+architectural choice investigated.
 
 ## 2. Research Objective
 
@@ -288,6 +298,25 @@ directionally consistent per-seed variance on both sides. QGNN reaches
 essential parity on F1 (0.419 vs. 0.411) and a marginally higher MCC
 (0.382 vs. 0.362) — the one metric family where QGNN is not behind.
 
+**Required qualification — end-to-end comparison vs. representation
+diagnostic, not to be conflated.** Everything above compares two
+end-to-end, fully-trained models under this project's shared protocol.
+Stage 1 separately ran a plain logistic regression on the *same frozen
+128-D embedding* purely as a representation diagnostic — a different
+kind of measurement, not a third competing end-to-end model, and not
+trained/evaluated under the identical protocol as the two full models
+(different classifier family, different regularization, no early
+stopping). That diagnostic reached severity PR-AUC 0.465±0.005 — **above
+both** the classical end-to-end reference (0.449) and the QGNN reference
+(0.398). This does **not** mean "logistic regression is the strongest
+model" in the sense §5–§8 above use "strongest"/"stronger" — it means the
+frozen embedding already contains more severity-relevant signal than
+either full downstream head (classical or quantum) currently extracts
+from it. Wherever this document says classical GraphSAGE-Full is
+"stronger" or "the stronger model" on severity, that statement is scoped
+to the end-to-end comparison specifically, and this diagnostic finding
+should be read alongside it, not treated as contradicting it.
+
 **Pattern, not a ranking**: ranking quality (PR-AUC/ROC-AUC) and
 calibration both favor classical, more so on severity than primary;
 classification-at-a-fixed-threshold metrics (F1, MCC) are closer to
@@ -309,15 +338,26 @@ or is a 2-seed pilot not confirmed at full scale.
 
 The harder condition throughout — every model, every configuration,
 scores substantially lower on severity than primary (roughly halved).
-Stage 1's finding is decisive here: the same severity-5 periods score
-0.81 PR-AUC when in-distribution (under the primary split) vs. 0.38–0.45
-when genuinely out-of-distribution (severity split) — **this is
-predominantly a distribution-shift problem, not an information-content
-problem.** No architectural intervention tested (projection,
-initialization, ansatz, encoding) closed this gap; several (small-
-Gaussian init, PCA projection, most encoding alternatives) made it
-distinctly worse. Classical GraphSAGE-Full remained the strongest model
-on this condition throughout the entire project.
+Stage 1's finding is the clearest evidence available on the mechanism:
+the same severity-5 periods score 0.81 PR-AUC when in-distribution (under
+the primary split) vs. 0.38–0.45 when genuinely out-of-distribution
+(severity split) — **this strongly supports a predominantly
+distribution-shift explanation, rather than an information-content
+deficiency, for this dataset's severity gap.** No architectural
+intervention tested (projection, initialization, ansatz, encoding) closed
+this gap; several (small-Gaussian init, PCA projection, most encoding
+alternatives) made it distinctly worse. Among end-to-end models,
+classical GraphSAGE-Full remained the stronger model on this condition
+throughout the entire project — though, as §9's correction notes, a
+representation diagnostic on the same frozen embedding reaches a higher
+severity PR-AUC than classical's own end-to-end head, so the ceiling is
+not classical's architecture either. **This distribution-shift
+interpretation is itself scoped by a real limitation**: the severity
+test condition is dominated by a single underlying severity-5 event
+(`QGNN_V4_LIMITATIONS.md` §1), so it should be read as strong evidence
+for *this dataset's* specific severity-5 pattern, not as an established
+general claim about generalization across many independent severe
+events — that broader claim remains untested.
 
 ## 12. Fresh-Onset Detection
 
@@ -453,12 +493,16 @@ simulator with no physical quantum hardware involved.
    predictive signal — confirmed independently by diagnostic classifiers,
    PCA structure, and direct target-correlation analysis (Stage 1).
 2. The representation is not the exclusive bottleneck for severity
-   performance: a simple linear model on it already matches/exceeds every
-   quantum configuration tried.
+   performance: a simple linear model on it already matches/exceeds
+   every quantum configuration tried, **and also exceeds the classical
+   end-to-end head's own severity PR-AUC** (0.465 vs. 0.449) — as a
+   representation diagnostic, not a competing end-to-end model (§9).
 3. Severity's difficulty is predominantly a genuine train/test
-   distribution-shift problem (proven via the primary-split-contains-
-   severity-5-in-distribution comparison, Stage 1), not an information
-   deficiency.
+   distribution-shift problem — strongly supported by the
+   primary-split-contains-severity-5-in-distribution comparison (Stage
+   1) — rather than an information deficiency, though this is evidence
+   from one dataset with a single underlying severity-5 event, not a
+   general claim (`QGNN_V4_LIMITATIONS.md` §1).
 4. No single architectural factor investigated (projection, ansatz,
    initialization, encoding, qubit count, depth) produced a reproducible,
    seed-robust improvement over the standing QGNN-v4 reference.
@@ -470,8 +514,10 @@ simulator with no physical quantum hardware involved.
 7. Fresh-onset anticipation is not demonstrated by any model tested,
    quantum or classical — a property of the benchmark's available
    features, not of any architecture.
-8. Classical GraphSAGE-Full remains the strongest model on the Severity/
-   OOD condition throughout every phase of this investigation.
+8. Among end-to-end, fully-trained models, classical GraphSAGE-Full
+   remains the stronger model on the Severity/OOD condition throughout
+   every phase of this investigation — with the representation-diagnostic
+   qualification in Finding 2 above kept explicit, not implied away.
 
 ## 21. Final Conclusion
 
@@ -481,18 +527,25 @@ representation, this ideal PennyLane `default.qubit` simulation, this
 splits evaluated, **the investigated modifications (projection,
 initialization, initialization scale, ansatz, and quantum encoding) did
 not produce a reproducible, seed-robust improvement over the standing
-QGNN-v4 reference, and the classical GraphSAGE-Full baseline remained
-stronger on the Severity/OOD generalization condition throughout.** This
-conclusion is scoped exactly to what was tested — it is not a claim that
-quantum computing is inferior to classical GNNs in general, that quantum
-hardware would behave identically, that a different dataset would
-reproduce this result, that this architecture is globally optimal, that
-every possible encoding has been exhausted, or that a quantum advantage
-in this problem class is impossible. Within the boundaries actually
-investigated, the evidence is consistent and reproducible: it does not
-support adopting any of the tested modifications as a replacement for the
-standing reference, and it does support treating classical GraphSAGE-Full
-as the stronger current option for this specific severity/OOD condition.
+QGNN-v4 reference. Among end-to-end, fully-trained models, the classical
+GraphSAGE-Full baseline remained stronger on the Severity/OOD
+generalization condition throughout** — a representation diagnostic
+(not an end-to-end model) on the same frozen embedding numerically
+exceeds classical's own severity PR-AUC, which is itself evidence that
+the ceiling is not attributable to the classical architecture either
+(§9, Finding 2). This conclusion is scoped exactly to what was tested —
+it is not a claim that quantum computing is inferior to classical GNNs
+in general, that quantum hardware would behave identically, that a
+different dataset would reproduce this result, that this architecture is
+globally optimal, that every possible encoding has been exhausted, or
+that a quantum advantage in this problem class is impossible. Within the
+boundaries actually investigated, the evidence is consistent and
+reproducible: it does not support adopting any of the tested
+modifications as a replacement for the standing reference, and it
+supports treating classical GraphSAGE-Full as the stronger current
+end-to-end option for this specific severity/OOD condition — while the
+representation diagnostic indicates the practical ceiling on this
+frozen embedding is higher than either full model currently reaches.
 
 ### Explicitly demonstrated
 
@@ -506,9 +559,11 @@ as the stronger current option for this specific severity/OOD condition.
   final metrics.
 - Severity/OOD performance is substantially harder than primary for every
   model tested.
-- Classical GraphSAGE-Full is stronger on the established Severity
-  reference across ranking, calibration, and (mostly) classification
-  metrics.
+- Among end-to-end models, classical GraphSAGE-Full is stronger on the
+  established Severity reference across ranking, calibration, and
+  (mostly) classification metrics — while a representation-diagnostic
+  logistic regression on the same frozen embedding (not an end-to-end
+  model) numerically exceeds classical's own severity PR-AUC (§9).
 - Fresh-onset detection remains near the noise floor for every model
   tested, including the full classical baseline.
 
@@ -603,12 +658,31 @@ scoped, controlled design before execution.
 
 ### Table 4 — Classical vs. QGNN Reference Performance
 
-See `QGNN_V4_REFERENCE_COMPARISON.csv` (14 rows: 7 metrics × 2 splits,
-with absolute/relative gaps computed as Classical − QGNN). Headline:
-Primary PR-AUC 0.807 vs. 0.811 (QGNN nominally ahead, within noise);
-Severity PR-AUC 0.449 vs. 0.398 (Classical ahead, +0.051 absolute,
-+11.4% relative); Severity ECE 0.090 vs. 0.241 (Classical far better
-calibrated, the largest gap of any metric measured).
+Full 7-metric × 2-split gap table: `QGNN_V4_REFERENCE_COMPARISON.csv`
+(absolute/relative gaps computed as Classical − QGNN). The wide-format
+view below adds the Stage 1 logistic-regression **representation
+diagnostic** explicitly, per this validation pass's own requirement not
+to mix it with the end-to-end comparison without a clear label — it is
+**not** an end-to-end model and was not trained under either full
+model's protocol; it is included here specifically because it is
+numerically above both end-to-end models on severity PR-AUC, a fact
+that must not be obscured by omission.
+
+| Model | Type | Primary PR-AUC | Severity PR-AUC | Primary ROC-AUC | Severity ROC-AUC | Primary MCC | Severity MCC |
+|---|---|---:|---:|---:|---:|---:|---:|
+| Classical GraphSAGE-Full | end-to-end (5 seeds) | 0.8070 | 0.4487 | 0.9871 | 0.7275 | 0.6845 | 0.3624 |
+| QGNN-v4 standing reference | end-to-end (5 seeds) | 0.8112 | 0.3976 | 0.9775 | 0.6566 | 0.6539 | 0.3824 |
+| Logistic regression (frozen embedding) | **representation diagnostic** (5 seeds, not an end-to-end model) | 0.6706 | **0.4646** | 0.9662 | 0.7311 | 0.5532 | 0.4336 |
+
+**Gap statement (exact metric and split named, per this validation's own
+requirement — never "X% worse overall")**: Classical − QGNN-v4 Primary
+PR-AUC = −0.0042 absolute (−0.52% relative; QGNN nominally ahead, within
+noise). Classical − QGNN-v4 Severity PR-AUC = +0.0511 absolute (+11.39%
+relative; Classical ahead). Classical − QGNN-v4 Severity ECE = −0.1501
+absolute (Classical better calibrated by this amount; lower is better
+for ECE, so the negative sign here means QGNN's ECE is larger). Every
+other metric/split pair is in `QGNN_V4_REFERENCE_COMPARISON.csv`,
+individually, not aggregated into a single percentage.
 
 ### Table 5 — QGNN Ablation Experiments
 
@@ -704,6 +778,38 @@ No plot in this set implies a statistical significance test was
 performed; error bars are ± one standard deviation across the stated
 seed count only.
 
+## Appendix D — Master Experiment Inventory
+
+One row per experiment (not per split). `Outcome` uses this project's
+final validation-stage vocabulary — **KEEP** (adopted going forward),
+**INVESTIGATE** (real, unresolved signal), **DROP** (not supported as a
+contributor), **DIAGNOSTIC** (not an architectural change — measures the
+representation or a mechanism, not a candidate replacement), **COMPLETE**
+(the investigation itself is finished, independent of whether the result
+was positive) — not the same vocabulary as `QGNN_V4_ABLATION_TABLE.csv`'s
+per-factor `interpretation` column, which classifies evidence strength
+rather than a forward-looking status. Full per-split metrics for every
+row: `QGNN_V4_MASTER_RESULTS.csv`.
+
+| Phase | Experiment | Main Variable | Seeds | Primary PR-AUC | Severity PR-AUC | Outcome |
+|---|---|---|---:|---|---|---|
+| Reference | Classical GraphSAGE-Full | (end-to-end reference) | 5 | 0.807±0.066 | 0.449±0.013 | COMPLETE |
+| Reference | QGNN-v4 raw baseline (pre-LayerNorm) | (architecture reference) | 5 | 0.833±0.140 | 0.392±0.024 | COMPLETE |
+| Phase 2 | Training patience | patience 10 vs. 25 | 5 | unchanged (±0.003, noise) | unchanged (±0.003, noise) | DROP |
+| Phase 2b | Output scale (4 variants) | trainable/fixed α, +β | 5 each | 0.820–0.842 | 0.388–0.404 | DROP |
+| Phase 2c | LayerNorm (no-affine) | output normalization | 5 | 0.811±0.074 | 0.398±0.057 | KEEP (standing reference) |
+| Phase 2c | LayerNorm (affine) | output normalization + affine | 5 | 0.800±0.073 | 0.408±0.071 | INVESTIGATE |
+| Phase 2d | Seed-45 root-cause investigation | (diagnostic only, no architecture change) | 5 (existing runs) | n/a | n/a | DIAGNOSTIC |
+| Phase 3 | Qubit count (4, 8) | n_qubits | 5 each | 0.847 / 0.810 | 0.396 / 0.364 | INVESTIGATE |
+| Phase 3 | Circuit depth (1, 3 layers) | n_layers | 5 / 0 (killed) | 0.693 / 0.804 | 0.386 / N/A | INVESTIGATE (1L) / COMPLETE-INCOMPLETE (3L severity, no data) |
+| Phase 4 Stage 1 | Representation audit (diagnostics, PCA, graph, fresh-onset) | (diagnostic only, no architecture change) | 5 | 0.671–0.781 (diagnostics) | 0.463–0.480 (diagnostics) | DIAGNOSTIC |
+| Phase 4 Stage 2 | Projection/bottleneck (nonlinear, pre-norm, PCA) | projection architecture | 2 (pilot) | 0.391–0.729 | 0.263–0.389 | DROP |
+| Phase 4 Stage 4 | Initialization (small-Gaussian, identity-like) | quantum_init | 2 (pilot) | 0.726–0.828 | 0.265–0.380 | INVESTIGATE |
+| Phase 4 Stage 4b | Initialization scale sweep (5 points) | gaussian_std | 2 (pilot) | 0.812–0.828 | 0.263–0.386 | DROP (redundant cluster) / INVESTIGATE (std=0.050 only) |
+| Phase 4 Stage 4b | Identity-like, 5-seed expansion | quantum_init=identity_like | 5 | 0.777±0.059 | 0.386±0.112 | DROP (stability claim did not replicate) |
+| Phase 4 Stage 5 | Ansatz comparison (ring, reduced-chain) | entanglement topology | 5 each | 0.807 / 0.814 | 0.354 / 0.360 | INVESTIGATE |
+| Encoding Investigation | Encoding scale/type/re-uploading | encoding_scale, encoding_type, data_reuploading | 2 (pilot) | 0.581–0.803 | 0.263–0.432 | DROP |
+
 ---
 
 ## Abstract
@@ -722,21 +828,30 @@ initialization and its scale, quantum-circuit ansatz, and quantum
 encoding), and approximately 230 training runs evaluated on both a
 temporal (primary) and a severity/out-of-distribution generalization
 split, no tested modification produced a reproducible, seed-robust
-improvement over the standing QGNN-v4 reference, and the classical
-GraphSAGE-Full baseline remained stronger on the severity/OOD condition
-throughout. The most consequential finding was representational rather
-than architectural: a simple linear classifier on the same frozen
-embedding already matches or exceeds every quantum configuration's
-severity performance, and the severity split's difficulty is shown to be
-predominantly a genuine distribution-shift problem rather than an
-information deficiency, since the identical severity-5 periods are
-predicted well when in-distribution. The principal limitations —
-evaluation on a single, event-limited synthetic dataset, an ideal
-noise-free quantum simulator with no physical hardware in the loop, and
-several investigations conducted as 2-seed pilots not equivalent to the
-project's 5-seed standing references — are documented explicitly and
-scope every conclusion drawn. The contribution of this work is not a
-higher benchmark score but a systematic, evidence-based map of which
+improvement over the standing QGNN-v4 reference, and, among end-to-end
+fully-trained models, the classical GraphSAGE-Full baseline remained
+stronger on the severity/out-of-distribution condition throughout. The
+most consequential finding was representational rather than
+architectural: a simple linear classifier trained only as a
+representation diagnostic on the same frozen embedding — not a competing
+end-to-end model — already matches or exceeds every quantum
+configuration's severity performance and numerically exceeds the
+classical end-to-end head's own severity PR-AUC as well, indicating the
+frozen embedding carries more severity-relevant signal than either full
+downstream head currently extracts. The severity split's difficulty is
+shown to be predominantly consistent with a genuine distribution-shift
+problem rather than an information deficiency, since the identical
+severity-5 periods are predicted well when in-distribution — though this
+evidence comes from a dataset whose severe condition is dominated by a
+single underlying severity-5 event, so it is stated as evidence within
+this benchmark, not a general claim about severe-event generalization.
+The principal limitations — evaluation on a single, event-limited
+synthetic dataset, an ideal noise-free quantum simulator with no physical
+hardware in the loop, and several investigations conducted as 2-seed
+pilots not equivalent to the project's 5-seed standing references — are
+documented explicitly and scope every conclusion drawn. The contribution
+of this work is not a higher benchmark score but a systematic,
+evidence-based map of which
 factors do and do not govern this hybrid architecture's behavior, and a
 demonstrated methodology (frozen-representation diagnostics, seed-level
 mechanism tracing, quantum-feature probing, and disciplined pilot-then-
