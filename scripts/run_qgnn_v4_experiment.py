@@ -77,7 +77,7 @@ def _fake_frames():
     return NodeFeatureFrames(frames={}, numeric_columns={}, categorical_columns={})
 
 
-def _build_quantum_model(variant: str, in_dim: int, v4_arch, alpha_init: float, projection: dict):
+def _build_quantum_model(variant: str, in_dim: int, v4_arch, alpha_init: float, projection: dict, quantum_init: str):
     """Phase 2b (output-scale/calibration investigation, QGNN_V4_PHASE2B_REPORT.md):
     `variant="baseline"` is the unmodified HybridQuantumHead (identical to
     every prior phase). The other three variants all use
@@ -91,32 +91,39 @@ def _build_quantum_model(variant: str, in_dim: int, v4_arch, alpha_init: float, 
     the two LayerNorm variants (Stage 2's fixed output-side control).
     Every other variant requires the all-defaults ("linear" projection, no
     pre-norm) projection dict -- passing a non-default projection with a
-    non-LayerNorm variant is a configuration error, not silently ignored."""
+    non-LayerNorm variant is a configuration error, not silently ignored.
+
+    `quantum_init` (Phase 4 Stage 4, Track F): "default"/"small_gaussian"/
+    "identity_like" -- same restriction as `projection`, only meaningful
+    for the two LayerNorm variants; a non-default value with any other
+    variant is a configuration error."""
     common = dict(
         n_qubits=v4_arch.n_qubits, n_layers=v4_arch.n_layers,
         ansatz=v4_arch.ansatz, diff_method=v4_arch.diff_method, device_name=v4_arch.device,
     )
     is_default_projection = projection == {"projection_type": "linear", "projection_hidden_dim": 32, "pre_projection_norm": False}
+    is_default_init = quantum_init == "default"
+    incompatible_msg = "--projection-type/--pre-projection-norm/--quantum-init require --head-variant layernorm_noaffine or layernorm_affine (Stage 2/4's fixed output-side control)"
     if variant == "baseline":
-        if not is_default_projection:
-            raise ValueError("--projection-type/--pre-projection-norm require --head-variant layernorm_noaffine or layernorm_affine (Stage 2's fixed output-side control)")
+        if not (is_default_projection and is_default_init):
+            raise ValueError(incompatible_msg)
         return HybridQuantumHead(in_dim, **common)
     if variant == "scale":
-        if not is_default_projection:
-            raise ValueError("--projection-type/--pre-projection-norm require --head-variant layernorm_noaffine or layernorm_affine (Stage 2's fixed output-side control)")
+        if not (is_default_projection and is_default_init):
+            raise ValueError(incompatible_msg)
         return HybridQuantumHeadOutputScale(in_dim, **common, alpha_init=alpha_init, use_bias=False, trainable_scale=True)
     if variant == "scale_bias":
-        if not is_default_projection:
-            raise ValueError("--projection-type/--pre-projection-norm require --head-variant layernorm_noaffine or layernorm_affine (Stage 2's fixed output-side control)")
+        if not (is_default_projection and is_default_init):
+            raise ValueError(incompatible_msg)
         return HybridQuantumHeadOutputScale(in_dim, **common, alpha_init=alpha_init, use_bias=True, trainable_scale=True)
     if variant == "fixed_scale":
-        if not is_default_projection:
-            raise ValueError("--projection-type/--pre-projection-norm require --head-variant layernorm_noaffine or layernorm_affine (Stage 2's fixed output-side control)")
+        if not (is_default_projection and is_default_init):
+            raise ValueError(incompatible_msg)
         return HybridQuantumHeadOutputScale(in_dim, **common, alpha_init=alpha_init, use_bias=False, trainable_scale=False)
     if variant == "layernorm_noaffine":
-        return HybridQuantumHeadLayerNorm(in_dim, **common, elementwise_affine=False, **projection)
+        return HybridQuantumHeadLayerNorm(in_dim, **common, elementwise_affine=False, quantum_init=quantum_init, **projection)
     if variant == "layernorm_affine":
-        return HybridQuantumHeadLayerNorm(in_dim, **common, elementwise_affine=True, **projection)
+        return HybridQuantumHeadLayerNorm(in_dim, **common, elementwise_affine=True, quantum_init=quantum_init, **projection)
     raise ValueError(f"unknown head variant {variant!r}")
 
 
@@ -141,6 +148,8 @@ def main() -> None:
     parser.add_argument("--projection-hidden-dim", type=int, default=32, help="Hidden width for --projection-type nonlinear. Ignored otherwise.")
     parser.add_argument("--pre-projection-norm", action="store_true", help="Track B3: applies LayerNorm(in_dim) to the frozen embedding BEFORE the projection into the quantum circuit. Only valid with --head-variant layernorm_noaffine/layernorm_affine. Independent of --projection-type (can combine with either).")
     parser.add_argument("--pca-components", type=int, default=None, help="Track B4: train-split-only PCA (reusing qgnn_v2.build_v2_prepared/PCASupplierReducer, the same infra qgnn_v2.py already uses) reduces the frozen embedding to this many dimensions BEFORE it reaches the head -- in_dim becomes --pca-components instead of the raw embedding width. n_qubits/n_layers/ansatz stay whatever --n-qubits/etc. already set (unchanged quantum circuit, only the classical input changes). Default None = no PCA, raw embedding used unchanged (Track B1/B2/B3's setting).")
+    parser.add_argument("--quantum-init", default="default", choices=["default", "small_gaussian", "identity_like"], help="Phase 4 Stage 4 Track F (QGNN_V4_PHASE4_PLAN.md): initial values of the quantum circuit's own trainable parameters -- same shape/count either way. 'default' (F1, the control): PennyLane's own TorchLayer default, uniform[0,2*pi] -- identical to every prior phase. 'small_gaussian' (F2): mean=0,std=0.01. 'identity_like' (F3): every rotation parameter starts at exactly 0.0 (Rot(0,0,0)/RY(0)/RZ(0)/RX(0) are each exactly the single-qubit identity) -- the fixed entangling CNOT pattern is NOT parameterized and still fires regardless, so this is identity-like for the rotation gates only, not the whole circuit. Only valid with --head-variant layernorm_noaffine/layernorm_affine.")
+    parser.add_argument("--output-subdir", default=None, help="Joined onto config.experiment.output_dir before every run/summary path (e.g. 'phase4_stage4/small_gaussian') -- keeps a stage's configurations in separate directories instead of all landing in the same experiments/qgnn_v4/ flat listing. Default None = today's behavior, unchanged.")
     args = parser.parse_args()
 
     train_fn = train_v4_head_with_diagnostics if args.diagnostics else train_v2_head
@@ -162,6 +171,8 @@ def main() -> None:
         config.training.epochs = args.epochs
     if args.patience:
         config.training.early_stopping_patience = args.patience
+    if args.output_subdir:
+        config.experiment.output_dir = os.path.join(config.experiment.output_dir, args.output_subdir)
     seeds = [int(s) for s in args.seeds.split(",")] if args.seeds else list(config.experiment.seeds)
 
     print(f"QGNN-v4: dataset={config.dataset.dataset_id} n_qubits={v4_arch.n_qubits} n_layers={v4_arch.n_layers} ansatz={v4_arch.ansatz} diff_method={v4_arch.diff_method} device={v4_arch.device} epochs={config.training.epochs} patience={config.training.early_stopping_patience}")
@@ -220,19 +231,29 @@ def main() -> None:
             "projection_hidden_dim": args.projection_hidden_dim,
             "pre_projection_norm": args.pre_projection_norm,
         }
-        print(f"-- Hybrid-Quantum-v4 (variant={args.head_variant}, n_qubits={v4_arch.n_qubits}, n_layers={v4_arch.n_layers}, ansatz={v4_arch.ansatz}, projection={projection}, pca_components={args.pca_components}) --")
+        print(f"-- Hybrid-Quantum-v4 (variant={args.head_variant}, n_qubits={v4_arch.n_qubits}, n_layers={v4_arch.n_layers}, ansatz={v4_arch.ansatz}, projection={projection}, pca_components={args.pca_components}, quantum_init={args.quantum_init}) --")
         set_seed(seed)
-        quantum_model = _build_quantum_model(args.head_variant, in_dim, v4_arch, args.alpha_init, projection)
+        quantum_model = _build_quantum_model(args.head_variant, in_dim, v4_arch, args.alpha_init, projection, args.quantum_init)
+        # Phase 4 Stage 4 Track F's initialization audit (QGNN_V4_PHASE4_PLAN.md
+        # section 16): captured BEFORE train_fn touches the model at all, so
+        # this is genuinely the pre-training distribution, not a snapshot
+        # after any optimizer step.
+        init_stats = quantum_model.quantum_parameter_stats() if hasattr(quantum_model, "quantum_parameter_stats") else None
         quantum_train = train_fn(v4prepared, quantum_model, seed=seed, verbose=False)
         quantum_eval = evaluate_v2(quantum_train.model, v4prepared, config.threshold)
         q_test = quantum_eval.metrics_by_split.get("test", {})
         resource_summary = quantum_train.model.quantum_resource_summary()
+        final_stats = quantum_train.model.quantum_parameter_stats() if hasattr(quantum_train.model, "quantum_parameter_stats") else None
         print(f"  test: pr_auc={q_test.get('pr_auc')} roc_auc={q_test.get('roc_auc')}")
         print(f"  quantum resource summary: {resource_summary}")
+        if init_stats is not None:
+            print(f"  quantum param stats: initial={init_stats}  final={final_stats}")
         q_run_dir = new_run_dir(config.experiment.output_dir, f"{args.tag}_quantum_seed{seed}")
         write_json(os.path.join(q_run_dir, "encoder_checkpoint.json"), {"checkpoint_dir": checkpoint_dir})
         write_json(os.path.join(q_run_dir, "quantum_resource_summary.json"), resource_summary)
-        _save_run(q_run_dir, config, quantum_train.model, "hybrid_quantum_v4", v4prepared, quantum_train, quantum_eval, seed, {"in_dim": in_dim, "encoder_checkpoint": checkpoint_dir, "quantum": resource_summary, "head_variant": args.head_variant, "alpha_init": args.alpha_init, "pca_components": args.pca_components})
+        if init_stats is not None:
+            write_json(os.path.join(q_run_dir, "quantum_init_stats.json"), {"initial": init_stats, "final": final_stats})
+        _save_run(q_run_dir, config, quantum_train.model, "hybrid_quantum_v4", v4prepared, quantum_train, quantum_eval, seed, {"in_dim": in_dim, "encoder_checkpoint": checkpoint_dir, "quantum": resource_summary, "head_variant": args.head_variant, "alpha_init": args.alpha_init, "pca_components": args.pca_components, "quantum_init": args.quantum_init})
         print(f"  saved -> {q_run_dir}")
         if q_test.get("pr_auc") is not None:
             quantum_pr_aucs.append(q_test["pr_auc"])

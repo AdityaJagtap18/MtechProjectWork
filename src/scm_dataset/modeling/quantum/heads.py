@@ -199,7 +199,15 @@ class HybridQuantumHeadLayerNorm(nn.Module):
     class called with `in_dim=pca_components` on an already PCA-reduced
     (train-fit-only, via the existing `qgnn_v2.build_v2_prepared`/
     `graph_embedding_reduction.fit_embedding_pca`) embedding frame --
-    the reduction happens upstream of the head, not inside it."""
+    the reduction happens upstream of the head, not inside it.
+
+    Phase 4 Stage 4 (QGNN_V4_PHASE4_PLAN.md Track F) adds one more
+    OPTIONAL, backward-compatible knob: `quantum_init` controls only the
+    INITIAL VALUES of the quantum circuit's own trainable parameters
+    (`build_quantum_layer`/`circuit.QUANTUM_INIT_STRATEGIES`) -- same
+    shape, same parameter count, same circuit either way.
+    `quantum_init="default"` (the default) is byte-for-byte what every
+    prior phase already ran."""
 
     def __init__(
         self,
@@ -213,6 +221,7 @@ class HybridQuantumHeadLayerNorm(nn.Module):
         projection_type: str = "linear",
         projection_hidden_dim: int = 32,
         pre_projection_norm: bool = False,
+        quantum_init: str = "default",
     ):
         super().__init__()
         if projection_type not in ("linear", "nonlinear"):
@@ -225,6 +234,7 @@ class HybridQuantumHeadLayerNorm(nn.Module):
         self.projection_type = projection_type
         self.projection_hidden_dim = projection_hidden_dim
         self.pre_projection_norm = pre_projection_norm
+        self.quantum_init = quantum_init
 
         self.pre_norm = nn.LayerNorm(in_dim) if pre_projection_norm else None
         if projection_type == "linear":
@@ -233,7 +243,7 @@ class HybridQuantumHeadLayerNorm(nn.Module):
             self.reduce = nn.Sequential(
                 nn.Linear(in_dim, projection_hidden_dim), nn.GELU(), nn.Linear(projection_hidden_dim, n_qubits)
             )
-        self.quantum = build_quantum_layer(n_qubits, n_layers, ansatz=ansatz, diff_method=diff_method, device_name=device_name)
+        self.quantum = build_quantum_layer(n_qubits, n_layers, ansatz=ansatz, diff_method=diff_method, device_name=device_name, quantum_init=quantum_init)
         self.norm = nn.LayerNorm(n_qubits, elementwise_affine=elementwise_affine)
         self.out = nn.Linear(n_qubits, 1)
 
@@ -262,6 +272,26 @@ class HybridQuantumHeadLayerNorm(nn.Module):
                 "pre_projection_norm": self.pre_projection_norm,
                 "reduce_parameters": sum(p.numel() for p in self.reduce.parameters()),
             },
+            "quantum_init": self.quantum_init,
+        }
+
+    def quantum_parameter_stats(self) -> dict:
+        """Phase 4 Stage 4 §16's initialization audit: mean/std/min/max/L2
+        norm of the quantum circuit's own trainable parameters AT WHATEVER
+        POINT this is called -- the caller decides whether that's "right
+        after construction" (initial distribution) or "after training"
+        (final distribution) by choosing when to call it. Pooled across
+        every quantum weight tensor (currently always a single `weights`
+        tensor, but this doesn't assume that)."""
+        values = torch.cat([p.detach().flatten() for p in self.quantum.parameters()])
+        return {
+            "quantum_init": self.quantum_init,
+            "n_params": int(values.numel()),
+            "mean": float(values.mean().item()),
+            "std": float(values.std().item()) if values.numel() > 1 else 0.0,
+            "min": float(values.min().item()),
+            "max": float(values.max().item()),
+            "l2_norm": float(values.norm(p=2).item()),
         }
 
 

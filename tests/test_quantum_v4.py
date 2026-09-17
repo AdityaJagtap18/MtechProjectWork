@@ -537,3 +537,161 @@ def test_b4_pca_informed_projection_end_to_end(tiny_benchmark):
         eval_result = evaluate_v2(result.model, v2prepared, prepared.config.threshold)
         assert "test" in eval_result.metrics_by_split
         assert result.model.quantum.parameters() is not None  # circuit still exists, unaffected by in_dim
+
+
+# ---------------------------------------------------------------------------
+# Phase 4 Stage 4 (QGNN_V4_PHASE4_PLAN.md Track F): quantum parameter
+# initialization strategies. F1 (default/control) is every test above with
+# quantum_init left at its default -- nothing below tests F1 in isolation
+# since it IS the pre-Stage-4 behavior already covered.
+# ---------------------------------------------------------------------------
+
+
+def test_default_quantum_init_is_uniform_0_to_2pi_matching_pennylanes_own_default():
+    """F1 control: quantum_init='default' must pass init_method=None
+    through to TorchLayer unchanged -- verified both structurally (the
+    resolved init_method really is None) and statistically (values land in
+    [0, 2*pi], and a build_quantum_layer with quantum_init='default' seeded
+    identically to a plain qml.qnn.TorchLayer call with no init_method
+    produces bit-identical initial weights)."""
+    from scm_dataset.modeling.quantum.circuit import resolve_quantum_init
+
+    assert resolve_quantum_init("default") is None
+
+    torch.manual_seed(7)
+    layer_a = build_quantum_layer(n_qubits=6, n_layers=2, quantum_init="default")
+    torch.manual_seed(7)
+    import pennylane as qml
+
+    from scm_dataset.modeling.quantum.circuit import ANSATZ_BUILDERS
+
+    dev = qml.device("default.qubit", wires=6)
+    ansatz_layer = ANSATZ_BUILDERS["strongly_entangling"]
+
+    @qml.qnode(dev, interface="torch", diff_method="backprop")
+    def circuit(inputs, weights):
+        qml.AngleEmbedding(inputs, wires=range(6), rotation="Y")
+        ansatz_layer(weights, wires=range(6))
+        return [qml.expval(qml.PauliZ(i)) for i in range(6)]
+
+    layer_b = qml.qnn.TorchLayer(circuit, {"weights": ansatz_layer.shape(2, 6)})  # no init_method -- PennyLane's own default
+    assert torch.equal(layer_a.weights, layer_b.weights)
+    assert (layer_a.weights >= 0).all() and (layer_a.weights <= 2 * math.pi).all()
+
+
+def test_small_gaussian_quantum_init_produces_small_near_zero_values():
+    """F2: mean=0, std=0.01 -- values should cluster tightly around zero,
+    nothing like the [0,2*pi] spread of the default."""
+    torch.manual_seed(3)
+    layer = build_quantum_layer(n_qubits=6, n_layers=2, quantum_init="small_gaussian")
+    values = layer.weights.detach()
+    assert values.abs().max() < 0.1  # 0.01 std -- 0.1 is a generous 10-sigma bound, not a tight fit
+    assert values.std().item() < 0.05
+
+
+def test_identity_like_quantum_init_is_exactly_zero():
+    """F3: every rotation parameter must start at EXACTLY 0.0 -- not
+    approximately -- since Rot(0,0,0)/RY(0)/RZ(0)/RX(0) are each exactly
+    the single-qubit identity only at the exact value 0."""
+    for ansatz in ["strongly_entangling", "basic_entangler", "hardware_efficient_ring", "reduced_entanglement"]:
+        layer = build_quantum_layer(n_qubits=6, n_layers=2, ansatz=ansatz, quantum_init="identity_like")
+        assert torch.equal(layer.weights, torch.zeros_like(layer.weights))
+
+
+def test_unknown_quantum_init_rejected():
+    with pytest.raises(ValueError, match="quantum_init"):
+        build_quantum_layer(n_qubits=6, n_layers=2, quantum_init="orthogonal")
+    with pytest.raises(ValueError, match="quantum_init"):
+        HybridQuantumHeadLayerNorm(in_dim=10, n_qubits=6, n_layers=1, quantum_init="orthogonal")
+
+
+@pytest.mark.parametrize("quantum_init", ["default", "small_gaussian", "identity_like"])
+def test_quantum_init_does_not_change_parameter_count_or_shape(quantum_init):
+    """Phase 4 Stage 4 section 17's explicit requirement: only the INITIAL
+    VALUES may differ between F1/F2/F3, never the parameter count."""
+    reference = HybridQuantumHeadLayerNorm(in_dim=10, n_qubits=6, n_layers=2, quantum_init="default")
+    variant = HybridQuantumHeadLayerNorm(in_dim=10, n_qubits=6, n_layers=2, quantum_init=quantum_init)
+    assert sum(p.numel() for p in variant.quantum.parameters()) == sum(p.numel() for p in reference.quantum.parameters())
+    assert sum(p.numel() for p in variant.parameters()) == sum(p.numel() for p in reference.parameters())
+    assert variant.quantum.weights.shape == reference.quantum.weights.shape
+
+
+@pytest.mark.parametrize("quantum_init", ["default", "small_gaussian", "identity_like"])
+def test_quantum_init_forward_backward_shape_and_finite_gradients(quantum_init):
+    head = HybridQuantumHeadLayerNorm(in_dim=10, n_qubits=6, n_layers=2, quantum_init=quantum_init)
+    logits = head(torch.randn(4, 10))
+    assert logits.shape == (4,)
+    assert torch.isfinite(logits).all()
+    logits.sum().backward()
+    for p in head.quantum.parameters():
+        assert p.grad is not None
+        assert torch.isfinite(p.grad).all()
+
+
+def test_identity_like_init_gradients_are_not_all_identical():
+    """A legitimate concern for a same-constant-value initialization
+    (echoing the classical-NN 'all-zero-weights breaks symmetry' failure
+    mode): if every quantum parameter starts at 0.0, do they all receive
+    the SAME gradient (which would make them update identically forever,
+    collapsing the circuit's effective capacity)? They should not -- each
+    Rot/RY/RZ acts on a different qubit at a different position in the
+    entangling pattern, so the local gradient differs per parameter even
+    from a shared starting value. Verified directly rather than assumed."""
+    torch.manual_seed(0)
+    head = HybridQuantumHeadLayerNorm(in_dim=10, n_qubits=6, n_layers=2, quantum_init="identity_like")
+    logits = head(torch.randn(8, 10))
+    logits.sum().backward()
+    grad = head.quantum.weights.grad.detach().flatten()
+    assert torch.isfinite(grad).all()
+    assert grad.std().item() > 1e-8  # not every gradient component identical
+    assert grad.abs().max().item() > 1e-8  # and not a fully vanished (all-zero) gradient either
+
+
+def test_quantum_resource_summary_reports_quantum_init():
+    for quantum_init in ["default", "small_gaussian", "identity_like"]:
+        head = HybridQuantumHeadLayerNorm(in_dim=10, n_qubits=6, n_layers=1, quantum_init=quantum_init)
+        assert head.quantum_resource_summary()["quantum_init"] == quantum_init
+
+
+def test_quantum_parameter_stats_matches_expected_distribution_per_strategy():
+    torch.manual_seed(0)
+    identity_head = HybridQuantumHeadLayerNorm(in_dim=10, n_qubits=6, n_layers=2, quantum_init="identity_like")
+    stats = identity_head.quantum_parameter_stats()
+    assert stats["mean"] == 0.0 and stats["std"] == 0.0 and stats["min"] == 0.0 and stats["max"] == 0.0 and stats["l2_norm"] == 0.0
+    assert stats["n_params"] == 36  # 6 qubits * 2 layers * 3 rotation params (StronglyEntanglingLayers)
+
+    small_gauss_head = HybridQuantumHeadLayerNorm(in_dim=10, n_qubits=6, n_layers=2, quantum_init="small_gaussian")
+    sg_stats = small_gauss_head.quantum_parameter_stats()
+    assert abs(sg_stats["mean"]) < 0.05
+    assert sg_stats["std"] < 0.05
+    assert sg_stats["l2_norm"] > 0.0  # NOT degenerate like identity_like
+
+
+def test_default_quantum_init_kwarg_omitted_reproduces_original_behavior_exactly():
+    """Backward-compatibility guarantee (mirrors Stage 2's own equivalent
+    test): every already-saved Phase 2c/2d/3/Stage-2 run constructed
+    HybridQuantumHeadLayerNorm without a quantum_init kwarg at all -- that
+    must still produce identical output to explicitly passing
+    quantum_init='default', given the same seed."""
+    torch.manual_seed(11)
+    omitted = HybridQuantumHeadLayerNorm(in_dim=10, n_qubits=6, n_layers=1, elementwise_affine=False)
+    torch.manual_seed(11)
+    explicit = HybridQuantumHeadLayerNorm(in_dim=10, n_qubits=6, n_layers=1, elementwise_affine=False, quantum_init="default")
+    x = torch.randn(4, 10)
+    assert torch.equal(omitted(x), explicit(x))
+
+
+def test_identity_like_init_end_to_end_training(tiny_benchmark):
+    """F3 must train correctly through the existing harness end-to-end --
+    not just build/forward/backward in isolation."""
+    v4prepared, _ = _tiny_v4_prepared(tiny_benchmark)
+    v4prepared.config.training.epochs = 3
+    v4prepared.config.training.early_stopping_patience = 5
+    in_dim = v4prepared.n_components
+
+    head = HybridQuantumHeadLayerNorm(in_dim=in_dim, n_qubits=4, n_layers=1, elementwise_affine=False, quantum_init="identity_like")
+    result = train_v2_head(v4prepared, head, seed=42, verbose=False)
+    eval_result = evaluate_v2(result.model, v4prepared, v4prepared.config.threshold)
+    assert "test" in eval_result.metrics_by_split
+    # weights must have actually moved away from the exact-zero start
+    assert not torch.equal(result.model.quantum.weights.detach(), torch.zeros_like(result.model.quantum.weights))
