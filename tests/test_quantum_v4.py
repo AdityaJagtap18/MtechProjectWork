@@ -384,3 +384,156 @@ def test_qgnn_v4_head_supports_depth_ablation(n_layers):
     logits = head(torch.randn(4, 10))
     assert logits.shape == (4,)
     assert torch.isfinite(logits).all()
+
+
+# ---------------------------------------------------------------------------
+# Phase 4 Stage 2 (QGNN_V4_PHASE4_PLAN.md Track B): projection/bottleneck
+# variants on HybridQuantumHeadLayerNorm. B1 (control) is every test above
+# with the new params left at their defaults -- nothing below tests B1
+# separately since it IS the pre-Stage-2 behavior already covered.
+# ---------------------------------------------------------------------------
+
+
+def test_default_projection_params_reproduce_original_behavior_exactly():
+    """B1 control: with projection_type='linear', pre_projection_norm=False
+    (the defaults), the new constructor args must be no-ops -- same
+    `reduce` type (a plain nn.Linear, not the nonlinear nn.Sequential), no
+    pre_norm module at all, and bit-identical output given identical
+    weights and input. This is the backward-compatibility guarantee every
+    already-saved Phase 2c/2d/3 run depends on."""
+    torch.manual_seed(0)
+    old_style = HybridQuantumHeadLayerNorm(in_dim=10, n_qubits=6, n_layers=1, elementwise_affine=False)
+    torch.manual_seed(0)
+    new_style = HybridQuantumHeadLayerNorm(in_dim=10, n_qubits=6, n_layers=1, elementwise_affine=False, projection_type="linear", pre_projection_norm=False)
+    assert isinstance(new_style.reduce, torch.nn.Linear)
+    assert new_style.pre_norm is None
+    x = torch.randn(5, 10)
+    assert torch.equal(old_style(x), new_style(x))
+
+
+def test_unknown_projection_type_rejected():
+    with pytest.raises(ValueError, match="projection_type"):
+        HybridQuantumHeadLayerNorm(in_dim=10, n_qubits=6, n_layers=1, projection_type="quadratic")
+
+
+def test_nonlinear_projection_b2_forward_shape_and_param_count():
+    """Track B2: Linear(in_dim,hidden)->GELU->Linear(hidden,n_qubits)
+    replaces the single Linear bottleneck -- shape must still end at
+    n_qubits (the quantum circuit's own input width is unaffected), and
+    the reduce-layer parameter count must match the two-linear-layer
+    formula exactly (for Stage 2's parameter-fairness reporting)."""
+    in_dim, hidden, n_qubits = 10, 32, 6
+    head = HybridQuantumHeadLayerNorm(in_dim=in_dim, n_qubits=n_qubits, n_layers=1, projection_type="nonlinear", projection_hidden_dim=hidden)
+    assert isinstance(head.reduce, torch.nn.Sequential)
+    expected_reduce_params = (in_dim * hidden + hidden) + (hidden * n_qubits + n_qubits)
+    assert sum(p.numel() for p in head.reduce.parameters()) == expected_reduce_params
+    logits = head(torch.randn(4, in_dim))
+    assert logits.shape == (4,)
+    assert torch.isfinite(logits).all()
+
+
+def test_pre_projection_norm_b3_normalizes_input_before_reduce():
+    """Track B3: LayerNorm(in_dim) must actually run on `h` before
+    `reduce` -- verified by construction (pre_norm is a real LayerNorm(
+    in_dim) module) and behaviorally (feeding an input with a large,
+    non-zero-mean, non-unit-variance shift must NOT change the head's
+    output once pre-normalized away, unlike the B1 control which has no
+    such invariance)."""
+    in_dim, n_qubits = 8, 4
+    torch.manual_seed(1)
+    head = HybridQuantumHeadLayerNorm(in_dim=in_dim, n_qubits=n_qubits, n_layers=1, pre_projection_norm=True)
+    assert isinstance(head.pre_norm, torch.nn.LayerNorm)
+    assert head.pre_norm.normalized_shape == (in_dim,)
+
+    x = torch.randn(6, in_dim)
+    shifted_and_scaled = x * 37.0 + 1000.0  # same per-example shape after LayerNorm's own per-example standardization
+    with torch.no_grad():
+        out_a = head(x)
+        out_b = head(shifted_and_scaled)
+    # atol=1e-3, not 1e-4: LayerNorm's internal eps (1e-5) plus the
+    # quantum circuit's trig/exponential ops compound tiny floating-point
+    # differences between the two inputs' standardized values -- the same
+    # kind of looseness test_layernorm_noaffine_actually_normalizes_per_example
+    # already documents for LayerNorm+quantum-circuit comparisons.
+    assert torch.allclose(out_a, out_b, atol=1e-3)
+
+    torch.manual_seed(1)
+    control = HybridQuantumHeadLayerNorm(in_dim=in_dim, n_qubits=n_qubits, n_layers=1, pre_projection_norm=False)
+    assert control.pre_norm is None
+    with torch.no_grad():
+        control_out_a = control(x)
+        control_out_b = control(shifted_and_scaled)
+    assert not torch.allclose(control_out_a, control_out_b, atol=1e-2)
+
+
+def test_projection_variants_gradient_flows_to_reduce_and_quantum_params():
+    """Both new projection knobs must not break backprop into the
+    existing quantum circuit -- combining nonlinear projection AND
+    pre-projection norm in one head (not a planned Stage 2 config, but a
+    stress test that the two compose without breaking gradient flow)."""
+    head = HybridQuantumHeadLayerNorm(in_dim=10, n_qubits=6, n_layers=1, projection_type="nonlinear", pre_projection_norm=True)
+    logits = head(torch.randn(4, 10))
+    logits.sum().backward()
+    for p in head.reduce.parameters():
+        assert p.grad is not None and torch.isfinite(p.grad).all()
+    for p in head.quantum.parameters():
+        assert p.grad is not None and torch.isfinite(p.grad).all()
+    assert head.pre_norm.weight.grad is not None
+
+
+def test_quantum_resource_summary_reports_projection_info():
+    linear_head = HybridQuantumHeadLayerNorm(in_dim=10, n_qubits=6, n_layers=1)
+    summary = linear_head.quantum_resource_summary()
+    assert summary["projection"] == {"type": "linear", "hidden_dim": None, "pre_projection_norm": False, "reduce_parameters": 10 * 6 + 6}
+
+    nonlinear_head = HybridQuantumHeadLayerNorm(in_dim=10, n_qubits=6, n_layers=1, projection_type="nonlinear", projection_hidden_dim=16, pre_projection_norm=True)
+    nl_summary = nonlinear_head.quantum_resource_summary()
+    assert nl_summary["projection"]["type"] == "nonlinear"
+    assert nl_summary["projection"]["hidden_dim"] == 16
+    assert nl_summary["projection"]["pre_projection_norm"] is True
+
+
+def test_checkpoint_save_load_roundtrip_for_projection_variants():
+    """Every Stage 2 head variant must survive a state_dict save/load
+    round trip with identical output -- same guarantee run_qgnn_v4_experiment.py's
+    _save_run relies on for every already-saved phase."""
+    for kwargs in [
+        dict(projection_type="linear", pre_projection_norm=False),
+        dict(projection_type="nonlinear", projection_hidden_dim=16, pre_projection_norm=False),
+        dict(projection_type="linear", pre_projection_norm=True),
+    ]:
+        head = HybridQuantumHeadLayerNorm(in_dim=10, n_qubits=6, n_layers=1, **kwargs)
+        x = torch.randn(4, 10)
+        with torch.no_grad():
+            before = head(x)
+        state = head.state_dict()
+        reloaded = HybridQuantumHeadLayerNorm(in_dim=10, n_qubits=6, n_layers=1, **kwargs)
+        reloaded.load_state_dict(state)
+        with torch.no_grad():
+            after = reloaded(x)
+        assert torch.equal(before, after)
+
+
+def test_b4_pca_informed_projection_end_to_end(tiny_benchmark):
+    """Track B4: HybridQuantumHeadLayerNorm needs NO new code for this --
+    it's the same class with in_dim=n_components fed a PCA-reduced (train-
+    fit-only, via qgnn_v2.build_v2_prepared -- already leakage-tested in
+    test_qgnn_v2.py) embedding instead of the raw one. Confirms the
+    composition actually works end-to-end and the quantum circuit still
+    only ever sees an n_qubits-wide input regardless of the PCA width."""
+    from scm_dataset.modeling.qgnn_v2 import build_v2_prepared
+
+    model, prepared = _tiny_frozen_encoder(tiny_benchmark)
+    times = sorted(prepared.examples["time"].unique())
+    emb = extract_supplier_embeddings(model, prepared, times)
+
+    for n_components in (4, 6):
+        v2prepared, reducer = build_v2_prepared(prepared.config, prepared.benchmark, prepared.examples, emb, n_components)
+        assert v2prepared.reduced.shape[1] == n_components
+        head = HybridQuantumHeadLayerNorm(in_dim=n_components, n_qubits=4, n_layers=1, elementwise_affine=False)
+        prepared.config.training.epochs = 2
+        prepared.config.training.early_stopping_patience = 5
+        result = train_v2_head(v2prepared, head, seed=42, verbose=False)
+        eval_result = evaluate_v2(result.model, v2prepared, prepared.config.threshold)
+        assert "test" in eval_result.metrics_by_split
+        assert result.model.quantum.parameters() is not None  # circuit still exists, unaffected by in_dim

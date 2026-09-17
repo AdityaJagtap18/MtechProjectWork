@@ -174,7 +174,32 @@ class HybridQuantumHeadLayerNorm(nn.Module):
     no learnable scale/shift. `elementwise_affine=True` (variant B) adds
     a learnable per-qubit `weight`/`bias` on top (PyTorch's default
     `LayerNorm` init: weight=1, bias=0 -- so at initialization, variant B
-    starts identical to variant A before any training)."""
+    starts identical to variant A before any training).
+
+    Phase 4 Stage 2 (QGNN_V4_PHASE4_PLAN.md Track B) adds three OPTIONAL,
+    backward-compatible knobs on the INPUT side only -- the post-quantum
+    LayerNorm/output stage above is untouched by all of them, per Stage
+    2's own "keep the existing post-quantum LayerNorm behavior unchanged"
+    rule:
+
+        pre_projection_norm=False, projection_type="linear" (both
+        defaults): IDENTICAL to every prior phase's head -- this is
+        Stage 2's B1 control, not a new code path.
+
+        pre_projection_norm=True (B3): LayerNorm(in_dim) applied to `h`
+        itself, before `reduce`.
+
+        projection_type="nonlinear" (B2): replaces the single
+        `Linear(in_dim, n_qubits)` bottleneck with `Linear(in_dim,
+        projection_hidden_dim) -> GELU -> Linear(projection_hidden_dim,
+        n_qubits)` -- a small, justified nonlinear projection, not an
+        arbitrarily deep MLP.
+
+    B4 (PCA-informed projection) needs no new code here: it is this SAME
+    class called with `in_dim=pca_components` on an already PCA-reduced
+    (train-fit-only, via the existing `qgnn_v2.build_v2_prepared`/
+    `graph_embedding_reduction.fit_embedding_pca`) embedding frame --
+    the reduction happens upstream of the head, not inside it."""
 
     def __init__(
         self,
@@ -185,19 +210,36 @@ class HybridQuantumHeadLayerNorm(nn.Module):
         diff_method: str = "backprop",
         device_name: str = "default.qubit",
         elementwise_affine: bool = False,
+        projection_type: str = "linear",
+        projection_hidden_dim: int = 32,
+        pre_projection_norm: bool = False,
     ):
         super().__init__()
+        if projection_type not in ("linear", "nonlinear"):
+            raise ValueError(f"unknown projection_type={projection_type!r}, expected 'linear' or 'nonlinear'")
         self.n_qubits = n_qubits
         self.n_layers = n_layers
         self.ansatz = ansatz
         self.device_name = device_name
         self.elementwise_affine = elementwise_affine
-        self.reduce = nn.Linear(in_dim, n_qubits)
+        self.projection_type = projection_type
+        self.projection_hidden_dim = projection_hidden_dim
+        self.pre_projection_norm = pre_projection_norm
+
+        self.pre_norm = nn.LayerNorm(in_dim) if pre_projection_norm else None
+        if projection_type == "linear":
+            self.reduce = nn.Linear(in_dim, n_qubits)
+        else:
+            self.reduce = nn.Sequential(
+                nn.Linear(in_dim, projection_hidden_dim), nn.GELU(), nn.Linear(projection_hidden_dim, n_qubits)
+            )
         self.quantum = build_quantum_layer(n_qubits, n_layers, ansatz=ansatz, diff_method=diff_method, device_name=device_name)
         self.norm = nn.LayerNorm(n_qubits, elementwise_affine=elementwise_affine)
         self.out = nn.Linear(n_qubits, 1)
 
     def forward(self, h: torch.Tensor) -> torch.Tensor:
+        if self.pre_norm is not None:
+            h = self.pre_norm(h)
         angles = math.pi * torch.tanh(self.reduce(h))
         q_out = self.quantum(angles).to(torch.float32)
         normed = self.norm(q_out)
@@ -211,9 +253,15 @@ class HybridQuantumHeadLayerNorm(nn.Module):
             "trainable_quantum_parameters": sum(p.numel() for p in self.quantum.parameters()),
             "total_trainable_parameters": sum(p.numel() for p in self.parameters()),
             "observable": "PauliZ (one per qubit)",
-            "encoding": "AngleEmbedding, rotation=Y, angle = pi * tanh(Linear(h))",
+            "encoding": "AngleEmbedding, rotation=Y, angle = pi * tanh(projection(h))",
             "backend": self.device_name,
             "normalization": {"type": "LayerNorm", "elementwise_affine": self.elementwise_affine},
+            "projection": {
+                "type": self.projection_type,
+                "hidden_dim": self.projection_hidden_dim if self.projection_type == "nonlinear" else None,
+                "pre_projection_norm": self.pre_projection_norm,
+                "reduce_parameters": sum(p.numel() for p in self.reduce.parameters()),
+            },
         }
 
 

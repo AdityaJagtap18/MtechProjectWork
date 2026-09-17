@@ -31,7 +31,7 @@ from scm_dataset.modeling.graph_embedding_reduction import (
     load_frozen_graphsage_encoder,
     prepare_frozen_encoder_input,
 )
-from scm_dataset.modeling.qgnn_v2 import evaluate_v2, set_seed, train_v2_head
+from scm_dataset.modeling.qgnn_v2 import build_v2_prepared, evaluate_v2, set_seed, train_v2_head
 from scm_dataset.modeling.quantum import (
     HybridQuantumHead,
     HybridQuantumHeadLayerNorm,
@@ -77,30 +77,46 @@ def _fake_frames():
     return NodeFeatureFrames(frames={}, numeric_columns={}, categorical_columns={})
 
 
-def _build_quantum_model(variant: str, in_dim: int, v4_arch, alpha_init: float):
+def _build_quantum_model(variant: str, in_dim: int, v4_arch, alpha_init: float, projection: dict):
     """Phase 2b (output-scale/calibration investigation, QGNN_V4_PHASE2B_REPORT.md):
     `variant="baseline"` is the unmodified HybridQuantumHead (identical to
     every prior phase). The other three variants all use
     HybridQuantumHeadOutputScale with the SAME qubits/layers/ansatz --
     only the scale/bias mechanism on the pre-Linear(n_qubits,1)
     representation differs. No architecture, encoding, or circuit change
-    in any variant."""
+    in any variant.
+
+    `projection` (Phase 4 Stage 2, Track B): {"projection_type",
+    "projection_hidden_dim", "pre_projection_norm"} -- only meaningful for
+    the two LayerNorm variants (Stage 2's fixed output-side control).
+    Every other variant requires the all-defaults ("linear" projection, no
+    pre-norm) projection dict -- passing a non-default projection with a
+    non-LayerNorm variant is a configuration error, not silently ignored."""
     common = dict(
         n_qubits=v4_arch.n_qubits, n_layers=v4_arch.n_layers,
         ansatz=v4_arch.ansatz, diff_method=v4_arch.diff_method, device_name=v4_arch.device,
     )
+    is_default_projection = projection == {"projection_type": "linear", "projection_hidden_dim": 32, "pre_projection_norm": False}
     if variant == "baseline":
+        if not is_default_projection:
+            raise ValueError("--projection-type/--pre-projection-norm require --head-variant layernorm_noaffine or layernorm_affine (Stage 2's fixed output-side control)")
         return HybridQuantumHead(in_dim, **common)
     if variant == "scale":
+        if not is_default_projection:
+            raise ValueError("--projection-type/--pre-projection-norm require --head-variant layernorm_noaffine or layernorm_affine (Stage 2's fixed output-side control)")
         return HybridQuantumHeadOutputScale(in_dim, **common, alpha_init=alpha_init, use_bias=False, trainable_scale=True)
     if variant == "scale_bias":
+        if not is_default_projection:
+            raise ValueError("--projection-type/--pre-projection-norm require --head-variant layernorm_noaffine or layernorm_affine (Stage 2's fixed output-side control)")
         return HybridQuantumHeadOutputScale(in_dim, **common, alpha_init=alpha_init, use_bias=True, trainable_scale=True)
     if variant == "fixed_scale":
+        if not is_default_projection:
+            raise ValueError("--projection-type/--pre-projection-norm require --head-variant layernorm_noaffine or layernorm_affine (Stage 2's fixed output-side control)")
         return HybridQuantumHeadOutputScale(in_dim, **common, alpha_init=alpha_init, use_bias=False, trainable_scale=False)
     if variant == "layernorm_noaffine":
-        return HybridQuantumHeadLayerNorm(in_dim, **common, elementwise_affine=False)
+        return HybridQuantumHeadLayerNorm(in_dim, **common, elementwise_affine=False, **projection)
     if variant == "layernorm_affine":
-        return HybridQuantumHeadLayerNorm(in_dim, **common, elementwise_affine=True)
+        return HybridQuantumHeadLayerNorm(in_dim, **common, elementwise_affine=True, **projection)
     raise ValueError(f"unknown head variant {variant!r}")
 
 
@@ -121,6 +137,10 @@ def main() -> None:
     parser.add_argument("--head-variant", default="baseline", choices=["baseline", "scale", "scale_bias", "fixed_scale", "layernorm_noaffine", "layernorm_affine"], help="Phase 2b/2c output-scale and normalization investigation (QGNN_V4_PHASE2B_REPORT.md, QGNN_V4_PHASE2C_REPORT.md). 'baseline'=unmodified HybridQuantumHead (default, identical to every prior phase). 'scale'=trainable alpha before the existing Linear(n_qubits,1). 'scale_bias'=trainable alpha+beta. 'fixed_scale'=non-trainable alpha at --alpha-init. 'layernorm_noaffine'/'layernorm_affine'=LayerNorm(n_qubits) on the PauliZ output before Linear(n_qubits,1), without/with a learnable per-qubit scale+bias. Same qubits/layers/ansatz/encoder in every case.")
     parser.add_argument("--alpha-init", type=float, default=1.0, help="Initial (or, for --head-variant fixed_scale, fixed) value of the output-scale alpha. Ignored for --head-variant baseline.")
     parser.add_argument("--quantum-only", action="store_true", help="Skip the matched-capacity classical arm -- use when the classical control is unchanged from an already-saved baseline run (Phase 2b: classical is never modified, so re-running it would just reproduce existing results).")
+    parser.add_argument("--projection-type", default="linear", choices=["linear", "nonlinear"], help="Phase 4 Stage 2 Track B2 (QGNN_V4_PHASE4_PLAN.md): 'linear'=the existing single Linear(in_dim,n_qubits) bottleneck (default, identical to every prior phase). 'nonlinear'=Linear(in_dim,--projection-hidden-dim)->GELU->Linear(--projection-hidden-dim,n_qubits). Only valid with --head-variant layernorm_noaffine/layernorm_affine.")
+    parser.add_argument("--projection-hidden-dim", type=int, default=32, help="Hidden width for --projection-type nonlinear. Ignored otherwise.")
+    parser.add_argument("--pre-projection-norm", action="store_true", help="Track B3: applies LayerNorm(in_dim) to the frozen embedding BEFORE the projection into the quantum circuit. Only valid with --head-variant layernorm_noaffine/layernorm_affine. Independent of --projection-type (can combine with either).")
+    parser.add_argument("--pca-components", type=int, default=None, help="Track B4: train-split-only PCA (reusing qgnn_v2.build_v2_prepared/PCASupplierReducer, the same infra qgnn_v2.py already uses) reduces the frozen embedding to this many dimensions BEFORE it reaches the head -- in_dim becomes --pca-components instead of the raw embedding width. n_qubits/n_layers/ansatz stay whatever --n-qubits/etc. already set (unchanged quantum circuit, only the classical input changes). Default None = no PCA, raw embedding used unchanged (Track B1/B2/B3's setting).")
     args = parser.parse_args()
 
     train_fn = train_v4_head_with_diagnostics if args.diagnostics else train_v2_head
@@ -165,8 +185,19 @@ def main() -> None:
         embedding_frame = extract_supplier_embeddings(encoder, prepared_full, all_times)
         print(f"  extracted raw embeddings (no PCA): {embedding_frame.shape}")
 
-        v4prepared = build_v4_prepared(config, benchmark, prepared_full.examples, embedding_frame)
-        in_dim = embedding_frame.shape[1]
+        pca_reducer = None
+        if args.pca_components:
+            # Track B4: train-split-only PCA fit, exactly the mechanism
+            # qgnn_v2.py's own QGNN-v2 experiments already use -- NOT a new
+            # reduction implementation. `examples` (supplier/time/target/
+            # split) is unchanged; only the input columns the head sees
+            # shrink from raw hidden_dim to --pca-components.
+            v4prepared, pca_reducer = build_v2_prepared(config, benchmark, prepared_full.examples, embedding_frame, args.pca_components)
+            in_dim = args.pca_components
+            print(f"  PCA-reduced embeddings (train-fit only): {in_dim} components")
+        else:
+            v4prepared = build_v4_prepared(config, benchmark, prepared_full.examples, embedding_frame)
+            in_dim = embedding_frame.shape[1]
 
         if not args.quantum_only:
             print("-- Matched-Capacity-Classical-v4 (RQ-Q3 control) --")
@@ -184,9 +215,14 @@ def main() -> None:
             if c_test.get("pr_auc") is not None:
                 classical_pr_aucs.append(c_test["pr_auc"])
 
-        print(f"-- Hybrid-Quantum-v4 (variant={args.head_variant}, n_qubits={v4_arch.n_qubits}, n_layers={v4_arch.n_layers}, ansatz={v4_arch.ansatz}) --")
+        projection = {
+            "projection_type": args.projection_type,
+            "projection_hidden_dim": args.projection_hidden_dim,
+            "pre_projection_norm": args.pre_projection_norm,
+        }
+        print(f"-- Hybrid-Quantum-v4 (variant={args.head_variant}, n_qubits={v4_arch.n_qubits}, n_layers={v4_arch.n_layers}, ansatz={v4_arch.ansatz}, projection={projection}, pca_components={args.pca_components}) --")
         set_seed(seed)
-        quantum_model = _build_quantum_model(args.head_variant, in_dim, v4_arch, args.alpha_init)
+        quantum_model = _build_quantum_model(args.head_variant, in_dim, v4_arch, args.alpha_init, projection)
         quantum_train = train_fn(v4prepared, quantum_model, seed=seed, verbose=False)
         quantum_eval = evaluate_v2(quantum_train.model, v4prepared, config.threshold)
         q_test = quantum_eval.metrics_by_split.get("test", {})
@@ -196,7 +232,7 @@ def main() -> None:
         q_run_dir = new_run_dir(config.experiment.output_dir, f"{args.tag}_quantum_seed{seed}")
         write_json(os.path.join(q_run_dir, "encoder_checkpoint.json"), {"checkpoint_dir": checkpoint_dir})
         write_json(os.path.join(q_run_dir, "quantum_resource_summary.json"), resource_summary)
-        _save_run(q_run_dir, config, quantum_train.model, "hybrid_quantum_v4", v4prepared, quantum_train, quantum_eval, seed, {"in_dim": in_dim, "encoder_checkpoint": checkpoint_dir, "quantum": resource_summary, "head_variant": args.head_variant, "alpha_init": args.alpha_init})
+        _save_run(q_run_dir, config, quantum_train.model, "hybrid_quantum_v4", v4prepared, quantum_train, quantum_eval, seed, {"in_dim": in_dim, "encoder_checkpoint": checkpoint_dir, "quantum": resource_summary, "head_variant": args.head_variant, "alpha_init": args.alpha_init, "pca_components": args.pca_components})
         print(f"  saved -> {q_run_dir}")
         if q_test.get("pr_auc") is not None:
             quantum_pr_aucs.append(q_test["pr_auc"])
