@@ -207,7 +207,13 @@ def main() -> None:
             "matched_capacity_classical_pr_auc": {"mean": float(np.mean(classical_pr_aucs)), "std": float(np.std(classical_pr_aucs)), "min": float(np.min(classical_pr_aucs)), "max": float(np.max(classical_pr_aucs))} if classical_pr_aucs else None,
             "hybrid_quantum_v4_pr_auc": {"mean": float(np.mean(quantum_pr_aucs)), "std": float(np.std(quantum_pr_aucs)), "min": float(np.min(quantum_pr_aucs)), "max": float(np.max(quantum_pr_aucs))} if quantum_pr_aucs else None,
         }
-        summary_path = os.path.join(config.experiment.output_dir, f"multiseed_summary_{args.tag}_seeds_{'-'.join(str(s) for s in seeds)}.json")
+        # config.split.strategy is included here (not just args.tag) because
+        # configs/qgnn_v4.yaml and configs/qgnn_v4_severity.yaml share the
+        # same experiment.output_dir -- running primary then severity with
+        # the same --tag would otherwise silently overwrite this convenience
+        # summary file (discovered during Phase 3; each per-seed run
+        # directory is unaffected, only this aggregate).
+        summary_path = os.path.join(config.experiment.output_dir, f"multiseed_summary_{args.tag}_{config.split.strategy}_seeds_{'-'.join(str(s) for s in seeds)}.json")
         write_json(summary_path, summary)
         print(f"\nMulti-seed summary -> {summary_path}")
         print(f"  Matched-Capacity-Classical-v4 PR-AUC: {summary['matched_capacity_classical_pr_auc']}")
