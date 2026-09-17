@@ -212,7 +212,30 @@ class HybridQuantumHeadLayerNorm(nn.Module):
     Phase 4 Stage 4b adds `gaussian_std`: only meaningful (and required)
     when `quantum_init="gaussian"`, for the initialization-scale sweep
     that generalizes Stage 4's fixed-std F2 ("small_gaussian", std=0.01)
-    to any std -- see `circuit._gaussian_init`."""
+    to any std -- see `circuit._gaussian_init`.
+
+    Quantum Encoding Investigation (QGNN_V4_QUANTUM_ENCODING_RESULTS.md)
+    adds three more OPTIONAL, backward-compatible knobs, all on the
+    classical-to-quantum ENCODING step specifically (the "angle = pi *
+    tanh(reduce(h))" line), not the projection or circuit topology:
+
+        encoding_type="tanh" (default, E0): the existing bounded
+        nonlinear mapping. encoding_type="clip": angle = encoding_scale *
+        clamp(reduce(h), -1, 1) -- a bounded LINEAR mapping (E3), isolating
+        the effect of tanh's nonlinear compression from the angular scale
+        itself.
+
+        encoding_scale=math.pi (default, E0): the existing pi multiplier.
+        E1 uses 0.5*pi, E2 uses 2*pi -- everything else about the mapping
+        (tanh vs. clip) stays whatever encoding_type already set.
+
+        data_reuploading=False (default, E0): the existing single
+        AngleEmbedding before the full variational circuit. True (E4)
+        re-encodes the SAME angles before EACH variational layer instead
+        (`circuit.build_quantum_layer`'s `data_reuploading` flag) --
+        purely a circuit-construction change; AngleEmbedding itself has no
+        trainable parameters, so this adds zero trainable parameters
+        despite repeating the encoding operation `n_layers` times."""
 
     def __init__(
         self,
@@ -228,10 +251,15 @@ class HybridQuantumHeadLayerNorm(nn.Module):
         pre_projection_norm: bool = False,
         quantum_init: str = "default",
         gaussian_std: float | None = None,
+        encoding_type: str = "tanh",
+        encoding_scale: float = math.pi,
+        data_reuploading: bool = False,
     ):
         super().__init__()
         if projection_type not in ("linear", "nonlinear"):
             raise ValueError(f"unknown projection_type={projection_type!r}, expected 'linear' or 'nonlinear'")
+        if encoding_type not in ("tanh", "clip"):
+            raise ValueError(f"unknown encoding_type={encoding_type!r}, expected 'tanh' or 'clip'")
         self.n_qubits = n_qubits
         self.n_layers = n_layers
         self.ansatz = ansatz
@@ -242,6 +270,9 @@ class HybridQuantumHeadLayerNorm(nn.Module):
         self.pre_projection_norm = pre_projection_norm
         self.quantum_init = quantum_init
         self.gaussian_std = gaussian_std
+        self.encoding_type = encoding_type
+        self.encoding_scale = encoding_scale
+        self.data_reuploading = data_reuploading
 
         self.pre_norm = nn.LayerNorm(in_dim) if pre_projection_norm else None
         if projection_type == "linear":
@@ -250,14 +281,23 @@ class HybridQuantumHeadLayerNorm(nn.Module):
             self.reduce = nn.Sequential(
                 nn.Linear(in_dim, projection_hidden_dim), nn.GELU(), nn.Linear(projection_hidden_dim, n_qubits)
             )
-        self.quantum = build_quantum_layer(n_qubits, n_layers, ansatz=ansatz, diff_method=diff_method, device_name=device_name, quantum_init=quantum_init, gaussian_std=gaussian_std)
+        self.quantum = build_quantum_layer(n_qubits, n_layers, ansatz=ansatz, diff_method=diff_method, device_name=device_name, quantum_init=quantum_init, gaussian_std=gaussian_std, data_reuploading=data_reuploading)
         self.norm = nn.LayerNorm(n_qubits, elementwise_affine=elementwise_affine)
         self.out = nn.Linear(n_qubits, 1)
+
+    def encode(self, h: torch.Tensor) -> torch.Tensor:
+        """The classical-to-quantum encoding step in isolation (Quantum
+        Encoding Investigation Section 10's "encoded angle distribution
+        analysis" calls this directly, without running the rest of
+        forward(), to inspect what the circuit actually receives)."""
+        z = self.reduce(h)
+        bounded = torch.tanh(z) if self.encoding_type == "tanh" else torch.clamp(z, -1.0, 1.0)
+        return self.encoding_scale * bounded
 
     def forward(self, h: torch.Tensor) -> torch.Tensor:
         if self.pre_norm is not None:
             h = self.pre_norm(h)
-        angles = math.pi * torch.tanh(self.reduce(h))
+        angles = self.encode(h)
         q_out = self.quantum(angles).to(torch.float32)
         normed = self.norm(q_out)
         return self.out(normed).squeeze(-1)
@@ -270,7 +310,7 @@ class HybridQuantumHeadLayerNorm(nn.Module):
             "trainable_quantum_parameters": sum(p.numel() for p in self.quantum.parameters()),
             "total_trainable_parameters": sum(p.numel() for p in self.parameters()),
             "observable": "PauliZ (one per qubit)",
-            "encoding": "AngleEmbedding, rotation=Y, angle = pi * tanh(projection(h))",
+            "encoding": f"AngleEmbedding, rotation=Y, angle = {self.encoding_scale:.6f} * {self.encoding_type}(projection(h))",
             "backend": self.device_name,
             "normalization": {"type": "LayerNorm", "elementwise_affine": self.elementwise_affine},
             "projection": {
@@ -281,6 +321,12 @@ class HybridQuantumHeadLayerNorm(nn.Module):
             },
             "quantum_init": self.quantum_init,
             "gaussian_std": self.gaussian_std,
+            "encoding_config": {
+                "encoding_type": self.encoding_type,
+                "encoding_scale": self.encoding_scale,
+                "data_reuploading": self.data_reuploading,
+                "n_encoding_operations": self.n_layers if self.data_reuploading else 1,
+            },
         }
 
     def quantum_parameter_stats(self) -> dict:

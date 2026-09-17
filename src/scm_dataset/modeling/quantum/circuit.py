@@ -148,6 +148,7 @@ def build_quantum_layer(
     device_name: str = "default.qubit",
     quantum_init: str = "default",
     gaussian_std: float | None = None,
+    data_reuploading: bool = False,
 ) -> nn.Module:
     """Returns a plain `nn.Module` (`qml.qnn.TorchLayer`) mapping
     `[batch, n_qubits]` rotation angles to `[batch, n_qubits]` PauliZ
@@ -163,7 +164,17 @@ def build_quantum_layer(
     "gaussian" (Stage 4b's configurable-std sweep -- requires
     `gaussian_std`). Only ever changes the INITIAL VALUES of the existing
     `weights` parameter -- same shape, same `.parameters()` count, same
-    circuit -- see `QUANTUM_INIT_STRATEGIES`/`resolve_quantum_init`."""
+    circuit -- see `QUANTUM_INIT_STRATEGIES`/`resolve_quantum_init`.
+
+    `data_reuploading` (Quantum Encoding Investigation, E4,
+    QGNN_V4_QUANTUM_ENCODING_RESULTS.md): `False` (default, E0-E3) keeps
+    the existing single `AngleEmbedding` before the full multi-layer
+    ansatz. `True` re-encodes the SAME `inputs` angles before EACH
+    variational layer instead -- `weights`' shape is completely
+    unchanged (still `(n_layers, n_qubits, ...)`), only sliced one layer
+    at a time per iteration, so this adds ZERO trainable parameters
+    despite repeating the (parameter-free) AngleEmbedding operation
+    `n_layers` times instead of once."""
     if ansatz not in ALL_ANSATZE:
         raise ValueError(f"unknown ansatz {ansatz!r}, expected one of {ALL_ANSATZE}")
     init_method = resolve_quantum_init(quantum_init, gaussian_std)
@@ -172,11 +183,19 @@ def build_quantum_layer(
     if ansatz in ANSATZ_BUILDERS:
         ansatz_layer = ANSATZ_BUILDERS[ansatz]
 
-        @qml.qnode(dev, interface="torch", diff_method=diff_method)
-        def circuit(inputs, weights):
-            qml.AngleEmbedding(inputs, wires=range(n_qubits), rotation="Y")
-            ansatz_layer(weights, wires=range(n_qubits))
-            return [qml.expval(qml.PauliZ(i)) for i in range(n_qubits)]
+        if data_reuploading:
+            @qml.qnode(dev, interface="torch", diff_method=diff_method)
+            def circuit(inputs, weights):
+                for layer in range(n_layers):
+                    qml.AngleEmbedding(inputs, wires=range(n_qubits), rotation="Y")
+                    ansatz_layer(weights[layer : layer + 1], wires=range(n_qubits))
+                return [qml.expval(qml.PauliZ(i)) for i in range(n_qubits)]
+        else:
+            @qml.qnode(dev, interface="torch", diff_method=diff_method)
+            def circuit(inputs, weights):
+                qml.AngleEmbedding(inputs, wires=range(n_qubits), rotation="Y")
+                ansatz_layer(weights, wires=range(n_qubits))
+                return [qml.expval(qml.PauliZ(i)) for i in range(n_qubits)]
 
         weight_shapes = {"weights": ansatz_layer.shape(n_layers, n_qubits)}
         return qml.qnn.TorchLayer(circuit, weight_shapes, init_method=init_method)
@@ -186,8 +205,11 @@ def build_quantum_layer(
 
         @qml.qnode(dev, interface="torch", diff_method=diff_method)
         def circuit(inputs, weights):
-            qml.AngleEmbedding(inputs, wires=range(n_qubits), rotation="Y")
+            if not data_reuploading:
+                qml.AngleEmbedding(inputs, wires=range(n_qubits), rotation="Y")
             for layer in range(n_layers):
+                if data_reuploading:
+                    qml.AngleEmbedding(inputs, wires=range(n_qubits), rotation="Y")
                 for q in range(n_qubits):
                     qml.RY(weights[layer, q, 0], wires=q)
                     qml.RZ(weights[layer, q, 1], wires=q)
@@ -203,8 +225,11 @@ def build_quantum_layer(
 
         @qml.qnode(dev, interface="torch", diff_method=diff_method)
         def circuit(inputs, weights):
-            qml.AngleEmbedding(inputs, wires=range(n_qubits), rotation="Y")
+            if not data_reuploading:
+                qml.AngleEmbedding(inputs, wires=range(n_qubits), rotation="Y")
             for layer in range(n_layers):
+                if data_reuploading:
+                    qml.AngleEmbedding(inputs, wires=range(n_qubits), rotation="Y")
                 for q in range(n_qubits):
                     qml.RY(weights[layer, q], wires=q)
                 for c, t in pairs:

@@ -19,6 +19,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import math
 import os
 
 import numpy as np
@@ -77,7 +78,7 @@ def _fake_frames():
     return NodeFeatureFrames(frames={}, numeric_columns={}, categorical_columns={})
 
 
-def _build_quantum_model(variant: str, in_dim: int, v4_arch, alpha_init: float, projection: dict, quantum_init: str, gaussian_std: float | None = None):
+def _build_quantum_model(variant: str, in_dim: int, v4_arch, alpha_init: float, projection: dict, quantum_init: str, gaussian_std: float | None = None, encoding: dict | None = None):
     """Phase 2b (output-scale/calibration investigation, QGNN_V4_PHASE2B_REPORT.md):
     `variant="baseline"` is the unmodified HybridQuantumHead (identical to
     every prior phase). The other three variants all use
@@ -97,34 +98,41 @@ def _build_quantum_model(variant: str, in_dim: int, v4_arch, alpha_init: float, 
     "identity_like"/"gaussian" -- same restriction as `projection`, only
     meaningful for the two LayerNorm variants; a non-default value with
     any other variant is a configuration error. `gaussian_std` (Stage 4b)
-    is required when quantum_init="gaussian", ignored otherwise."""
+    is required when quantum_init="gaussian", ignored otherwise.
+
+    `encoding` (Quantum Encoding Investigation): {"encoding_type",
+    "encoding_scale", "data_reuploading"} -- same restriction as
+    `projection`/`quantum_init`, only meaningful for the two LayerNorm
+    variants."""
+    encoding = encoding or {"encoding_type": "tanh", "encoding_scale": math.pi, "data_reuploading": False}
     common = dict(
         n_qubits=v4_arch.n_qubits, n_layers=v4_arch.n_layers,
         ansatz=v4_arch.ansatz, diff_method=v4_arch.diff_method, device_name=v4_arch.device,
     )
     is_default_projection = projection == {"projection_type": "linear", "projection_hidden_dim": 32, "pre_projection_norm": False}
     is_default_init = quantum_init == "default"
-    incompatible_msg = "--projection-type/--pre-projection-norm/--quantum-init require --head-variant layernorm_noaffine or layernorm_affine (Stage 2/4's fixed output-side control)"
+    is_default_encoding = encoding == {"encoding_type": "tanh", "encoding_scale": math.pi, "data_reuploading": False}
+    incompatible_msg = "--projection-type/--pre-projection-norm/--quantum-init/--encoding-type/--encoding-scale/--data-reuploading require --head-variant layernorm_noaffine or layernorm_affine (Stage 2/4/Encoding's fixed output-side control)"
     if variant == "baseline":
-        if not (is_default_projection and is_default_init):
+        if not (is_default_projection and is_default_init and is_default_encoding):
             raise ValueError(incompatible_msg)
         return HybridQuantumHead(in_dim, **common)
     if variant == "scale":
-        if not (is_default_projection and is_default_init):
+        if not (is_default_projection and is_default_init and is_default_encoding):
             raise ValueError(incompatible_msg)
         return HybridQuantumHeadOutputScale(in_dim, **common, alpha_init=alpha_init, use_bias=False, trainable_scale=True)
     if variant == "scale_bias":
-        if not (is_default_projection and is_default_init):
+        if not (is_default_projection and is_default_init and is_default_encoding):
             raise ValueError(incompatible_msg)
         return HybridQuantumHeadOutputScale(in_dim, **common, alpha_init=alpha_init, use_bias=True, trainable_scale=True)
     if variant == "fixed_scale":
-        if not (is_default_projection and is_default_init):
+        if not (is_default_projection and is_default_init and is_default_encoding):
             raise ValueError(incompatible_msg)
         return HybridQuantumHeadOutputScale(in_dim, **common, alpha_init=alpha_init, use_bias=False, trainable_scale=False)
     if variant == "layernorm_noaffine":
-        return HybridQuantumHeadLayerNorm(in_dim, **common, elementwise_affine=False, quantum_init=quantum_init, gaussian_std=gaussian_std, **projection)
+        return HybridQuantumHeadLayerNorm(in_dim, **common, elementwise_affine=False, quantum_init=quantum_init, gaussian_std=gaussian_std, **projection, **encoding)
     if variant == "layernorm_affine":
-        return HybridQuantumHeadLayerNorm(in_dim, **common, elementwise_affine=True, quantum_init=quantum_init, gaussian_std=gaussian_std, **projection)
+        return HybridQuantumHeadLayerNorm(in_dim, **common, elementwise_affine=True, quantum_init=quantum_init, gaussian_std=gaussian_std, **projection, **encoding)
     raise ValueError(f"unknown head variant {variant!r}")
 
 
@@ -152,6 +160,9 @@ def main() -> None:
     parser.add_argument("--quantum-init", default="default", choices=["default", "small_gaussian", "identity_like", "gaussian"], help="Phase 4 Stage 4/4b Track F (QGNN_V4_PHASE4_PLAN.md): initial values of the quantum circuit's own trainable parameters -- same shape/count either way. 'default' (F1, the control): PennyLane's own TorchLayer default, uniform[0,2*pi] -- identical to every prior phase. 'small_gaussian' (F2): fixed mean=0,std=0.01. 'identity_like' (F3): every rotation parameter starts at exactly 0.0 (Rot(0,0,0)/RY(0)/RZ(0)/RX(0) are each exactly the single-qubit identity) -- the fixed entangling CNOT pattern is NOT parameterized and still fires regardless, so this is identity-like for the rotation gates only, not the whole circuit. 'gaussian' (Stage 4b): mean=0, std=--gaussian-std (required). Only valid with --head-variant layernorm_noaffine/layernorm_affine.")
     parser.add_argument("--gaussian-std", type=float, default=None, help="Stage 4b initialization-scale sweep: std for --quantum-init gaussian. Required (and only meaningful) when --quantum-init gaussian.")
     parser.add_argument("--output-subdir", default=None, help="Joined onto config.experiment.output_dir before every run/summary path (e.g. 'phase4_stage4/small_gaussian') -- keeps a stage's configurations in separate directories instead of all landing in the same experiments/qgnn_v4/ flat listing. Default None = today's behavior, unchanged.")
+    parser.add_argument("--encoding-type", default="tanh", choices=["tanh", "clip"], help="Quantum Encoding Investigation (QGNN_V4_QUANTUM_ENCODING_RESULTS.md): 'tanh' (E0-E2, default): angle = --encoding-scale * tanh(reduce(h)), identical to every prior phase. 'clip' (E3): angle = --encoding-scale * clamp(reduce(h), -1, 1) -- a bounded LINEAR mapping, isolating tanh's nonlinear compression from the angular scale itself. Only valid with --head-variant layernorm_noaffine/layernorm_affine.")
+    parser.add_argument("--encoding-scale", type=float, default=math.pi, help="Multiplier on the bounded projection before AngleEmbedding. Default pi (E0). E1=0.5*pi, E2=2*pi.")
+    parser.add_argument("--data-reuploading", action="store_true", help="E4: re-encodes the same angles before EACH variational layer instead of once before the whole circuit (circuit.build_quantum_layer's data_reuploading flag). Adds ZERO trainable parameters -- AngleEmbedding has none; only the circuit's own weight tensor is repeated per-layer as before. Only valid with --head-variant layernorm_noaffine/layernorm_affine.")
     args = parser.parse_args()
 
     train_fn = train_v4_head_with_diagnostics if args.diagnostics else train_v2_head
@@ -233,9 +244,14 @@ def main() -> None:
             "projection_hidden_dim": args.projection_hidden_dim,
             "pre_projection_norm": args.pre_projection_norm,
         }
-        print(f"-- Hybrid-Quantum-v4 (variant={args.head_variant}, n_qubits={v4_arch.n_qubits}, n_layers={v4_arch.n_layers}, ansatz={v4_arch.ansatz}, projection={projection}, pca_components={args.pca_components}, quantum_init={args.quantum_init}, gaussian_std={args.gaussian_std}) --")
+        encoding = {
+            "encoding_type": args.encoding_type,
+            "encoding_scale": args.encoding_scale,
+            "data_reuploading": args.data_reuploading,
+        }
+        print(f"-- Hybrid-Quantum-v4 (variant={args.head_variant}, n_qubits={v4_arch.n_qubits}, n_layers={v4_arch.n_layers}, ansatz={v4_arch.ansatz}, projection={projection}, pca_components={args.pca_components}, quantum_init={args.quantum_init}, gaussian_std={args.gaussian_std}, encoding={encoding}) --")
         set_seed(seed)
-        quantum_model = _build_quantum_model(args.head_variant, in_dim, v4_arch, args.alpha_init, projection, args.quantum_init, args.gaussian_std)
+        quantum_model = _build_quantum_model(args.head_variant, in_dim, v4_arch, args.alpha_init, projection, args.quantum_init, args.gaussian_std, encoding)
         # Phase 4 Stage 4 Track F's initialization audit (QGNN_V4_PHASE4_PLAN.md
         # section 16): captured BEFORE train_fn touches the model at all, so
         # this is genuinely the pre-training distribution, not a snapshot
@@ -255,7 +271,7 @@ def main() -> None:
         write_json(os.path.join(q_run_dir, "quantum_resource_summary.json"), resource_summary)
         if init_stats is not None:
             write_json(os.path.join(q_run_dir, "quantum_init_stats.json"), {"initial": init_stats, "final": final_stats})
-        _save_run(q_run_dir, config, quantum_train.model, "hybrid_quantum_v4", v4prepared, quantum_train, quantum_eval, seed, {"in_dim": in_dim, "encoder_checkpoint": checkpoint_dir, "quantum": resource_summary, "head_variant": args.head_variant, "alpha_init": args.alpha_init, "pca_components": args.pca_components, "quantum_init": args.quantum_init, "gaussian_std": args.gaussian_std})
+        _save_run(q_run_dir, config, quantum_train.model, "hybrid_quantum_v4", v4prepared, quantum_train, quantum_eval, seed, {"in_dim": in_dim, "encoder_checkpoint": checkpoint_dir, "quantum": resource_summary, "head_variant": args.head_variant, "alpha_init": args.alpha_init, "pca_components": args.pca_components, "quantum_init": args.quantum_init, "gaussian_std": args.gaussian_std, "encoding": encoding})
         print(f"  saved -> {q_run_dir}")
         if q_test.get("pr_auc") is not None:
             quantum_pr_aucs.append(q_test["pr_auc"])

@@ -775,3 +775,194 @@ def test_quantum_resource_summary_reports_gaussian_std():
 
     default_head = HybridQuantumHeadLayerNorm(in_dim=10, n_qubits=6, n_layers=1)
     assert default_head.quantum_resource_summary()["gaussian_std"] is None
+
+
+# ---------------------------------------------------------------------------
+# Quantum Encoding Investigation (QGNN_V4_QUANTUM_ENCODING_RESULTS.md):
+# encoding_type/encoding_scale/data_reuploading. E0 (defaults) is every test
+# above -- nothing below tests E0 in isolation since it IS the pre-existing
+# behavior already covered.
+# ---------------------------------------------------------------------------
+
+
+def test_e0_default_encoding_kwargs_omitted_reproduces_original_behavior_exactly():
+    """Backward-compatibility guarantee: every already-saved run
+    constructed HybridQuantumHeadLayerNorm without encoding_type/
+    encoding_scale/data_reuploading at all -- must still match explicitly
+    passing encoding_type='tanh', encoding_scale=math.pi,
+    data_reuploading=False, given the same seed."""
+    torch.manual_seed(13)
+    omitted = HybridQuantumHeadLayerNorm(in_dim=10, n_qubits=6, n_layers=1)
+    torch.manual_seed(13)
+    explicit = HybridQuantumHeadLayerNorm(in_dim=10, n_qubits=6, n_layers=1, encoding_type="tanh", encoding_scale=math.pi, data_reuploading=False)
+    x = torch.randn(4, 10)
+    assert torch.equal(omitted(x), explicit(x))
+
+
+def test_encode_method_e0_matches_pi_tanh():
+    head = HybridQuantumHeadLayerNorm(in_dim=10, n_qubits=6, n_layers=1)
+    x = torch.randn(5, 10)
+    expected = math.pi * torch.tanh(head.reduce(x))
+    assert torch.allclose(head.encode(x), expected)
+
+
+def test_e1_reduced_encoding_scale_is_half_pi():
+    head = HybridQuantumHeadLayerNorm(in_dim=10, n_qubits=6, n_layers=1, encoding_scale=0.5 * math.pi)
+    x = torch.randn(5, 10)
+    expected = (0.5 * math.pi) * torch.tanh(head.reduce(x))
+    assert torch.allclose(head.encode(x), expected)
+    assert head.encode(x).abs().max() <= 0.5 * math.pi + 1e-5
+
+
+def test_e2_increased_encoding_scale_is_two_pi():
+    head = HybridQuantumHeadLayerNorm(in_dim=10, n_qubits=6, n_layers=1, encoding_scale=2 * math.pi)
+    x = torch.randn(5, 10)
+    expected = (2 * math.pi) * torch.tanh(head.reduce(x))
+    assert torch.allclose(head.encode(x), expected)
+
+
+def test_e3_clip_encoding_applies_bounded_linear_mapping():
+    """E3: angle = pi * clip(reduce(h), -1, 1) -- linear (not tanh-compressed)
+    within the [-1,1] input range, and exactly flat (clipped) outside it."""
+    head = HybridQuantumHeadLayerNorm(in_dim=10, n_qubits=6, n_layers=1, encoding_type="clip", encoding_scale=math.pi)
+    assert head.encoding_type == "clip"
+    x = torch.randn(20, 10) * 5  # deliberately large, to exercise clipping
+    z = head.reduce(x)
+    expected = math.pi * torch.clamp(z, -1.0, 1.0)
+    assert torch.allclose(head.encode(x), expected)
+    # every output must land exactly on [-pi, pi] -- clip guarantees this
+    # exactly, unlike tanh's asymptotic (never-exactly-reaching) bound.
+    assert (head.encode(x).abs() <= math.pi + 1e-5).all()
+    # for |z|>1 the mapping must be exactly saturated at +-pi (linear
+    # clip, not a smooth tanh compression)
+    saturated_high = z > 1.0
+    if saturated_high.any():
+        assert torch.allclose(head.encode(x)[saturated_high], torch.full_like(head.encode(x)[saturated_high], math.pi))
+
+
+def test_unknown_encoding_type_rejected():
+    with pytest.raises(ValueError, match="encoding_type"):
+        HybridQuantumHeadLayerNorm(in_dim=10, n_qubits=6, n_layers=1, encoding_type="sigmoid")
+
+
+def test_e4_data_reuploading_encodes_before_each_variational_layer():
+    """Verified by introspecting the compiled PennyLane tape (not just
+    trusting the docstring): data_reuploading=True must produce exactly
+    n_layers AngleEmbedding operations in the executed circuit;
+    data_reuploading=False must produce exactly 1, regardless of n_layers."""
+    for n_layers in (1, 2, 3):
+        reuploaded = build_quantum_layer(n_qubits=6, n_layers=n_layers, data_reuploading=True)
+        reuploaded(torch.randn(2, 6))
+        ops = [op.name for op in reuploaded.qnode._tape.operations]
+        assert ops.count("AngleEmbedding") == n_layers
+
+        single_shot = build_quantum_layer(n_qubits=6, n_layers=n_layers, data_reuploading=False)
+        single_shot(torch.randn(2, 6))
+        ops2 = [op.name for op in single_shot.qnode._tape.operations]
+        assert ops2.count("AngleEmbedding") == 1
+
+
+@pytest.mark.parametrize("ansatz", ["strongly_entangling", "hardware_efficient_ring", "reduced_entanglement", "basic_entangler"])
+def test_e4_data_reuploading_works_for_every_ansatz(ansatz):
+    """Section 4's data-reuploading spec must generalize across every
+    ansatz build_quantum_layer supports, not just the reference one."""
+    layer = build_quantum_layer(n_qubits=6, n_layers=2, ansatz=ansatz, data_reuploading=True)
+    out = layer(torch.randn(3, 6))
+    assert out.shape == (3, 6)
+    assert torch.isfinite(out).all()
+    ops = [op.name for op in layer.qnode._tape.operations]
+    assert ops.count("AngleEmbedding") == 2
+
+
+def test_data_reuploading_introduces_zero_trainable_parameters():
+    """Section 5's explicit requirement: repeating the (parameter-free)
+    AngleEmbedding must not change the quantum circuit's own parameter
+    count or the head's total trainable parameter count."""
+    reference = HybridQuantumHeadLayerNorm(in_dim=10, n_qubits=6, n_layers=2)
+    reuploaded = HybridQuantumHeadLayerNorm(in_dim=10, n_qubits=6, n_layers=2, data_reuploading=True)
+    assert sum(p.numel() for p in reuploaded.quantum.parameters()) == sum(p.numel() for p in reference.quantum.parameters())
+    assert sum(p.numel() for p in reuploaded.parameters()) == sum(p.numel() for p in reference.parameters())
+    assert reuploaded.quantum.weights.shape == reference.quantum.weights.shape
+
+
+def test_data_reuploading_changes_output_given_same_weights():
+    """A behavioral sanity check that re-uploading is actually doing
+    something different, not silently falling back to the E0 circuit --
+    same weights, same input, different circuit structure must generally
+    produce a different PauliZ output."""
+    torch.manual_seed(21)
+    e0 = HybridQuantumHeadLayerNorm(in_dim=10, n_qubits=6, n_layers=2)
+    torch.manual_seed(21)
+    e4 = HybridQuantumHeadLayerNorm(in_dim=10, n_qubits=6, n_layers=2, data_reuploading=True)
+    assert torch.equal(e0.quantum.weights, e4.quantum.weights)  # same initial weights (same seed)
+    x = torch.randn(4, 10)
+    assert not torch.equal(e0(x), e4(x))
+
+
+def test_encoding_variants_forward_backward_and_gradient_flow():
+    configs = [
+        dict(encoding_type="tanh", encoding_scale=0.5 * math.pi),
+        dict(encoding_type="tanh", encoding_scale=2 * math.pi),
+        dict(encoding_type="clip", encoding_scale=math.pi),
+        dict(data_reuploading=True),
+    ]
+    for kwargs in configs:
+        head = HybridQuantumHeadLayerNorm(in_dim=10, n_qubits=6, n_layers=2, **kwargs)
+        logits = head(torch.randn(4, 10))
+        assert logits.shape == (4,)
+        assert torch.isfinite(logits).all()
+        logits.sum().backward()
+        for p in head.quantum.parameters():
+            assert p.grad is not None and torch.isfinite(p.grad).all()
+        for p in head.reduce.parameters():
+            assert p.grad is not None and torch.isfinite(p.grad).all()
+
+
+def test_quantum_resource_summary_reports_encoding_config():
+    head = HybridQuantumHeadLayerNorm(in_dim=10, n_qubits=6, n_layers=2, encoding_type="clip", encoding_scale=0.5 * math.pi, data_reuploading=True)
+    summary = head.quantum_resource_summary()
+    assert summary["encoding_config"] == {
+        "encoding_type": "clip", "encoding_scale": 0.5 * math.pi, "data_reuploading": True, "n_encoding_operations": 2,
+    }
+    default_summary = HybridQuantumHeadLayerNorm(in_dim=10, n_qubits=6, n_layers=3).quantum_resource_summary()
+    assert default_summary["encoding_config"] == {
+        "encoding_type": "tanh", "encoding_scale": math.pi, "data_reuploading": False, "n_encoding_operations": 1,
+    }
+
+
+def test_encoding_checkpoint_save_load_roundtrip():
+    for kwargs in [dict(encoding_scale=0.5 * math.pi), dict(encoding_type="clip"), dict(data_reuploading=True)]:
+        head = HybridQuantumHeadLayerNorm(in_dim=10, n_qubits=6, n_layers=1, **kwargs)
+        x = torch.randn(4, 10)
+        with torch.no_grad():
+            before = head(x)
+        state = head.state_dict()
+        reloaded = HybridQuantumHeadLayerNorm(in_dim=10, n_qubits=6, n_layers=1, **kwargs)
+        reloaded.load_state_dict(state)
+        with torch.no_grad():
+            after = reloaded(x)
+        assert torch.equal(before, after)
+
+
+def test_e0_encoding_end_to_end_training_unaffected(tiny_benchmark):
+    """A full train_v2_head pass with explicit E0 encoding kwargs must
+    reach the exact same best_val_pr_auc/best_epoch as the pre-encoding-investigation
+    default call (same seed) -- confirms the new __init__ params don't
+    perturb the existing training path when left at their E0 values."""
+    v4prepared, _ = _tiny_v4_prepared(tiny_benchmark)
+    v4prepared.config.training.epochs = 3
+    v4prepared.config.training.early_stopping_patience = 5
+    in_dim = v4prepared.n_components
+
+    from scm_dataset.modeling.qgnn_v2 import set_seed as v4_set_seed
+
+    v4_set_seed(42)
+    plain = HybridQuantumHeadLayerNorm(in_dim=in_dim, n_qubits=4, n_layers=1, elementwise_affine=False)
+    plain_result = train_v2_head(v4prepared, plain, seed=42, verbose=False)
+
+    v4_set_seed(42)
+    explicit_e0 = HybridQuantumHeadLayerNorm(in_dim=in_dim, n_qubits=4, n_layers=1, elementwise_affine=False, encoding_type="tanh", encoding_scale=math.pi, data_reuploading=False)
+    explicit_result = train_v2_head(v4prepared, explicit_e0, seed=42, verbose=False)
+
+    assert plain_result.best_val_pr_auc == explicit_result.best_val_pr_auc
+    assert plain_result.best_epoch == explicit_result.best_epoch
