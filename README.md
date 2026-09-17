@@ -4,9 +4,9 @@ Reproducible synthetic supply-chain dataset generation framework for
 supplier/procurement risk analysis under rare, high-impact disruptions, and
 a benchmark for comparing classical GNNs against QGNNs.
 
-Full specification: [SCM_DATASET_GENERATION_PLAN.md](SCM_DATASET_GENERATION_PLAN.md).
+Full specification: [SCM_DATASET_GENERATION_PLAN.md](docs/phases/SCM_DATASET_GENERATION_PLAN.md).
 Reconnaissance and design decisions made before implementation began:
-[DATASET_DESIGN_REVIEW.md](DATASET_DESIGN_REVIEW.md).
+[DATASET_DESIGN_REVIEW.md](docs/phases/DATASET_DESIGN_REVIEW.md).
 
 ## Status
 
@@ -231,7 +231,7 @@ satisfied should the project proceed to the GNN/QGNN comparison itself
   `data/benchmark/` in ~1 second
 
 Every phase of plan §42 is now implemented — see
-[DATASET_DESIGN_REVIEW.md](DATASET_DESIGN_REVIEW.md) for the design
+[DATASET_DESIGN_REVIEW.md](docs/phases/DATASET_DESIGN_REVIEW.md) for the design
 decisions made along the way, and `notebooks/walkthrough.ipynb` for a
 step-by-step visual walkthrough of Phases 1-3.
 

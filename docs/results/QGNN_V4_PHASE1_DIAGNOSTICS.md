@@ -136,7 +136,7 @@ early-stopping simply cutting a slower-converging optimization short.
 **Built** (additive only — `qgnn.py`/`qgnn_v2.py`/`qgnn_v2_reupload.py`/`qgnn_v3.py`
 untouched, no forward-pass or architecture change):
 
-- [`src/scm_dataset/modeling/quantum/train.py`](src/scm_dataset/modeling/quantum/train.py) —
+- [`src/scm_dataset/modeling/quantum/train.py`](../../src/scm_dataset/modeling/quantum/train.py) —
   `train_v4_head_with_diagnostics`, a copy of `qgnn_v2.train_v2_head`'s
   loop with two additions: per-epoch train PR-AUC (an extra `no_grad`
   forward pass over the full train set each epoch), and per-epoch L2 norm
