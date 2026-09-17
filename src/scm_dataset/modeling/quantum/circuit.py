@@ -56,8 +56,27 @@ ALL_ANSATZE = sorted(set(ANSATZ_BUILDERS) | CUSTOM_ANSATZE)
 
 def _small_gaussian_init(tensor: torch.Tensor) -> torch.Tensor:
     """Phase 4 Stage 4 F2: mean=0, std=0.01 -- starts every trainable
-    rotation parameter close to (but not exactly) zero."""
+    rotation parameter close to (but not exactly) zero. Kept as its own
+    fixed-std strategy (rather than folded into `_gaussian_init` below) so
+    every already-saved Stage 4 F2 run stays reproducible byte-for-byte
+    under the exact name that produced it -- `"gaussian"` with
+    `gaussian_std=0.01` (Stage 4b's G3) is numerically identical to this,
+    just reached via the newer, configurable-std path."""
     return torch.nn.init.normal_(tensor, mean=0.0, std=0.01)
+
+
+def _gaussian_init(std: float):
+    """Phase 4 Stage 4b Part B (QGNN_V4_PHASE4_PLAN.md): the small-Gaussian
+    idea generalized to a configurable std, for the scale sweep (0.001,
+    0.005, 0.010, 0.025, 0.050) motivated by Stage 4's own finding that F1
+    starts at a large parameter norm (~20.8) while F2/F3 start near zero --
+    this tests whether it's specifically the INITIAL SCALE, not "Gaussian
+    vs. uniform" as a family, that drove Stage 4's Primary/Severity
+    trade-off. Returns a callable (not applied immediately) so
+    `resolve_quantum_init` can build it lazily per requested std."""
+    def init(tensor: torch.Tensor) -> torch.Tensor:
+        return torch.nn.init.normal_(tensor, mean=0.0, std=std)
+    return init
 
 
 def _identity_like_init(tensor: torch.Tensor) -> torch.Tensor:
@@ -94,9 +113,19 @@ QUANTUM_INIT_STRATEGIES = {
 }
 
 
-def resolve_quantum_init(quantum_init: str):
+def resolve_quantum_init(quantum_init: str, gaussian_std: float | None = None):
+    """`quantum_init="gaussian"` is the one strategy that takes a
+    parameter (`gaussian_std`, required in that case, ignored/must be None
+    otherwise) -- every other strategy name is a fixed, parameterless
+    lookup in `QUANTUM_INIT_STRATEGIES`."""
+    if quantum_init == "gaussian":
+        if gaussian_std is None:
+            raise ValueError("quantum_init='gaussian' requires gaussian_std to be set")
+        return _gaussian_init(gaussian_std)
+    if gaussian_std is not None:
+        raise ValueError(f"gaussian_std is only meaningful for quantum_init='gaussian', got quantum_init={quantum_init!r}")
     if quantum_init not in QUANTUM_INIT_STRATEGIES:
-        raise ValueError(f"unknown quantum_init={quantum_init!r}, expected one of {sorted(QUANTUM_INIT_STRATEGIES)}")
+        raise ValueError(f"unknown quantum_init={quantum_init!r}, expected 'gaussian' or one of {sorted(QUANTUM_INIT_STRATEGIES)}")
     return QUANTUM_INIT_STRATEGIES[quantum_init]
 
 
@@ -118,6 +147,7 @@ def build_quantum_layer(
     diff_method: str = "backprop",
     device_name: str = "default.qubit",
     quantum_init: str = "default",
+    gaussian_std: float | None = None,
 ) -> nn.Module:
     """Returns a plain `nn.Module` (`qml.qnn.TorchLayer`) mapping
     `[batch, n_qubits]` rotation angles to `[batch, n_qubits]` PauliZ
@@ -129,12 +159,14 @@ def build_quantum_layer(
     `quantum_init` (Phase 4 Stage 4, QGNN_V4_PHASE4_PLAN.md): "default"
     (F1, the control -- passes `init_method=None` through to `TorchLayer`
     unchanged, so every prior phase's runs are reproduced exactly),
-    "small_gaussian" (F2), or "identity_like" (F3). Only ever changes the
-    INITIAL VALUES of the existing `weights` parameter -- same shape, same
-    `.parameters()` count, same circuit -- see `QUANTUM_INIT_STRATEGIES`."""
+    "small_gaussian" (F2, fixed std=0.01), "identity_like" (F3), or
+    "gaussian" (Stage 4b's configurable-std sweep -- requires
+    `gaussian_std`). Only ever changes the INITIAL VALUES of the existing
+    `weights` parameter -- same shape, same `.parameters()` count, same
+    circuit -- see `QUANTUM_INIT_STRATEGIES`/`resolve_quantum_init`."""
     if ansatz not in ALL_ANSATZE:
         raise ValueError(f"unknown ansatz {ansatz!r}, expected one of {ALL_ANSATZE}")
-    init_method = resolve_quantum_init(quantum_init)
+    init_method = resolve_quantum_init(quantum_init, gaussian_std)
     dev = qml.device(device_name, wires=n_qubits)
 
     if ansatz in ANSATZ_BUILDERS:

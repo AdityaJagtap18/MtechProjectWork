@@ -207,7 +207,12 @@ class HybridQuantumHeadLayerNorm(nn.Module):
     (`build_quantum_layer`/`circuit.QUANTUM_INIT_STRATEGIES`) -- same
     shape, same parameter count, same circuit either way.
     `quantum_init="default"` (the default) is byte-for-byte what every
-    prior phase already ran."""
+    prior phase already ran.
+
+    Phase 4 Stage 4b adds `gaussian_std`: only meaningful (and required)
+    when `quantum_init="gaussian"`, for the initialization-scale sweep
+    that generalizes Stage 4's fixed-std F2 ("small_gaussian", std=0.01)
+    to any std -- see `circuit._gaussian_init`."""
 
     def __init__(
         self,
@@ -222,6 +227,7 @@ class HybridQuantumHeadLayerNorm(nn.Module):
         projection_hidden_dim: int = 32,
         pre_projection_norm: bool = False,
         quantum_init: str = "default",
+        gaussian_std: float | None = None,
     ):
         super().__init__()
         if projection_type not in ("linear", "nonlinear"):
@@ -235,6 +241,7 @@ class HybridQuantumHeadLayerNorm(nn.Module):
         self.projection_hidden_dim = projection_hidden_dim
         self.pre_projection_norm = pre_projection_norm
         self.quantum_init = quantum_init
+        self.gaussian_std = gaussian_std
 
         self.pre_norm = nn.LayerNorm(in_dim) if pre_projection_norm else None
         if projection_type == "linear":
@@ -243,7 +250,7 @@ class HybridQuantumHeadLayerNorm(nn.Module):
             self.reduce = nn.Sequential(
                 nn.Linear(in_dim, projection_hidden_dim), nn.GELU(), nn.Linear(projection_hidden_dim, n_qubits)
             )
-        self.quantum = build_quantum_layer(n_qubits, n_layers, ansatz=ansatz, diff_method=diff_method, device_name=device_name, quantum_init=quantum_init)
+        self.quantum = build_quantum_layer(n_qubits, n_layers, ansatz=ansatz, diff_method=diff_method, device_name=device_name, quantum_init=quantum_init, gaussian_std=gaussian_std)
         self.norm = nn.LayerNorm(n_qubits, elementwise_affine=elementwise_affine)
         self.out = nn.Linear(n_qubits, 1)
 
@@ -273,6 +280,7 @@ class HybridQuantumHeadLayerNorm(nn.Module):
                 "reduce_parameters": sum(p.numel() for p in self.reduce.parameters()),
             },
             "quantum_init": self.quantum_init,
+            "gaussian_std": self.gaussian_std,
         }
 
     def quantum_parameter_stats(self) -> dict:

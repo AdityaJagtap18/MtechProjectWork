@@ -695,3 +695,83 @@ def test_identity_like_init_end_to_end_training(tiny_benchmark):
     assert "test" in eval_result.metrics_by_split
     # weights must have actually moved away from the exact-zero start
     assert not torch.equal(result.model.quantum.weights.detach(), torch.zeros_like(result.model.quantum.weights))
+
+
+# ---------------------------------------------------------------------------
+# Phase 4 Stage 4b (QGNN_V4_PHASE4_PLAN.md Part B): configurable-std
+# Gaussian initialization -- generalizes Stage 4's fixed-std "small_gaussian"
+# (std=0.01) to any std, for the scale sweep (0.001/0.005/0.010/0.025/0.050).
+# ---------------------------------------------------------------------------
+
+
+def test_gaussian_quantum_init_requires_gaussian_std():
+    from scm_dataset.modeling.quantum.circuit import resolve_quantum_init
+
+    with pytest.raises(ValueError, match="gaussian_std"):
+        resolve_quantum_init("gaussian", gaussian_std=None)
+    with pytest.raises(ValueError, match="gaussian_std"):
+        build_quantum_layer(n_qubits=6, n_layers=2, quantum_init="gaussian")
+
+
+def test_gaussian_std_only_meaningful_for_gaussian_quantum_init():
+    from scm_dataset.modeling.quantum.circuit import resolve_quantum_init
+
+    with pytest.raises(ValueError, match="gaussian_std"):
+        resolve_quantum_init("default", gaussian_std=0.01)
+    with pytest.raises(ValueError, match="gaussian_std"):
+        resolve_quantum_init("identity_like", gaussian_std=0.01)
+
+
+@pytest.mark.parametrize("std", [0.001, 0.005, 0.010, 0.025, 0.050])
+def test_gaussian_quantum_init_produces_requested_scale(std):
+    """Each Stage 4b sweep point must actually produce values at
+    roughly its requested std -- checked statistically (36 samples is
+    enough to distinguish 0.001 from 0.050 by orders of magnitude, even
+    though it's too few for a tight std estimate)."""
+    torch.manual_seed(5)
+    layer = build_quantum_layer(n_qubits=6, n_layers=2, quantum_init="gaussian", gaussian_std=std)
+    values = layer.weights.detach()
+    assert values.abs().max() < std * 10  # generous bound, not a tight fit
+    assert values.std().item() < std * 5
+
+
+def test_gaussian_std_0_01_matches_small_gaussian_distribution_family():
+    """quantum_init='gaussian' with gaussian_std=0.01 must draw from the
+    SAME distribution family as the fixed 'small_gaussian' strategy (both
+    are torch.nn.init.normal_(mean=0, std=0.01)) -- verified by matching
+    seeded output exactly, confirming Stage 4b's G3 pilot point really is
+    numerically the same generator as Stage 4's own F2."""
+    torch.manual_seed(9)
+    small_gaussian_layer = build_quantum_layer(n_qubits=6, n_layers=2, quantum_init="small_gaussian")
+    torch.manual_seed(9)
+    gaussian_g3_layer = build_quantum_layer(n_qubits=6, n_layers=2, quantum_init="gaussian", gaussian_std=0.01)
+    assert torch.equal(small_gaussian_layer.weights, gaussian_g3_layer.weights)
+
+
+def test_gaussian_quantum_init_does_not_change_parameter_count():
+    reference = HybridQuantumHeadLayerNorm(in_dim=10, n_qubits=6, n_layers=2, quantum_init="default")
+    for std in [0.001, 0.005, 0.025, 0.050]:
+        variant = HybridQuantumHeadLayerNorm(in_dim=10, n_qubits=6, n_layers=2, quantum_init="gaussian", gaussian_std=std)
+        assert sum(p.numel() for p in variant.quantum.parameters()) == sum(p.numel() for p in reference.quantum.parameters())
+        assert sum(p.numel() for p in variant.parameters()) == sum(p.numel() for p in reference.parameters())
+
+
+def test_gaussian_quantum_init_threads_through_head_forward_backward():
+    head = HybridQuantumHeadLayerNorm(in_dim=10, n_qubits=6, n_layers=2, quantum_init="gaussian", gaussian_std=0.025)
+    assert head.gaussian_std == 0.025
+    logits = head(torch.randn(4, 10))
+    assert logits.shape == (4,)
+    assert torch.isfinite(logits).all()
+    logits.sum().backward()
+    for p in head.quantum.parameters():
+        assert p.grad is not None and torch.isfinite(p.grad).all()
+
+
+def test_quantum_resource_summary_reports_gaussian_std():
+    head = HybridQuantumHeadLayerNorm(in_dim=10, n_qubits=6, n_layers=1, quantum_init="gaussian", gaussian_std=0.005)
+    summary = head.quantum_resource_summary()
+    assert summary["quantum_init"] == "gaussian"
+    assert summary["gaussian_std"] == 0.005
+
+    default_head = HybridQuantumHeadLayerNorm(in_dim=10, n_qubits=6, n_layers=1)
+    assert default_head.quantum_resource_summary()["gaussian_std"] is None
