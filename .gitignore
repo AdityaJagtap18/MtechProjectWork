@@ -20,3 +20,5 @@ data/benchmark/
 # scripts/run_graphsage_experiment.py + configs/graphsage.yaml, same
 # reasoning as data/generated/ above.
 experiments/
+report_build/node_modules/
+QGNN_V4_Final_Research_Report.pdf
