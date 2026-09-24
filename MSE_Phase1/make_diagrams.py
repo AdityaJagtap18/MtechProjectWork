@@ -12,7 +12,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from matplotlib.patches import FancyBboxPatch, FancyArrowPatch, Circle
 
-OUT = "dissertation_ppt/TemplatePPT/"
+OUT = "MSE_Phase1/TemplatePPT/"
 INK = "#1a1a1a"
 
 # report palette (fill, edge)
@@ -43,7 +43,7 @@ def system_diagram():
                                      mutation_scale=22, lw=2.4, color="#444", zorder=2))
 
     box(5, 6.75, 8.6, 1.0,
-        "Synthetic supply-chain data  →  graph construction", BLUE)
+        "Supply-chain data  →  graph construction", BLUE)
     arrow(5, 6.22, 5, 5.72)
     box(5, 5.2, 8.6, 1.0,
         "Node and edge features\n(static attributes + leakage-safe rolling aggregates)", BLUE)
