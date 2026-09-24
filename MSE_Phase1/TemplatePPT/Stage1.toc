@@ -1,0 +1,13 @@
+\babel@toc {english}{}\relax 
+\beamer@sectionintoc {1}{Outline}{3}{0}{1}
+\beamer@sectionintoc {2}{Introduction}{4}{0}{2}
+\beamer@sectionintoc {3}{Literature Survey}{6}{0}{3}
+\beamer@sectionintoc {4}{Motivation and Need}{9}{0}{4}
+\beamer@sectionintoc {5}{Problem Statement}{10}{0}{5}
+\beamer@sectionintoc {6}{Research Objectives}{11}{0}{6}
+\beamer@sectionintoc {7}{SRS}{12}{0}{7}
+\beamer@sectionintoc {8}{Concrete Future Plan}{13}{0}{8}
+\beamer@sectionintoc {9}{Expected Outcomes}{14}{0}{9}
+\beamer@sectionintoc {10}{Summary}{15}{0}{10}
+\beamer@sectionintoc {11}{Timeline Chart}{16}{0}{11}
+\beamer@sectionintoc {12}{References}{17}{0}{12}

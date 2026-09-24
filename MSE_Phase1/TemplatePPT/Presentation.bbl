@@ -1,0 +1,221 @@
+\begin{thebibliography}{10}
+
+\bibitem{fareed2026}
+S.~M. Fareed, ``Machine learning-based supplier risk prediction and resilience
+  scoring for strategic sourcing in {US} manufacturing supply chains,'' {\em
+  SSRN 6495779}, 2026.
+
+\bibitem{lamichhane2025}
+P.~Lamichhane and D.~B. Rawat, ``Quantum machine learning: Recent advances,
+  challenges, and perspectives,'' {\em IEEE Access}, vol.~13, pp.~94057--94105,
+  2025.
+
+\bibitem{larbi2025}
+M.~Larbi, Y.~Choi, and C.~Cheng, ``Dual machine learning models for {IoT}
+  quality and supply chain management,'' in {\em 2025 Annual Reliability and
+  Maintainability Symposium (RAMS)}, IEEE, 2025.
+
+\bibitem{innan2024}
+N.~Innan, A.~Sawaika, A.~Dhor, {\em et~al.}, ``Financial fraud detection using
+  quantum graph neural networks,'' {\em Quantum Machine Intelligence}, vol.~6,
+  no.~1, 2024.
+\newblock art. 7.
+
+\bibitem{tudisco2024}
+A.~Tudisco, D.~Volpe, G.~Ranieri, {\em et~al.}, ``Evaluating the computational
+  advantages of the variational quantum circuit model in financial fraud
+  detection,'' {\em IEEE Access}, vol.~12, pp.~102918--102940, 2024.
+
+\bibitem{brown2026}
+W.~M. Brown {\em et~al.}, ``Multi-gpu quantum circuit simulation and the impact
+  of network performance,'' {\em Computer Physics Communications (2026)}, 2026.
+
+\bibitem{el2026}
+M.~El~Alami {\em et~al.}, ``Comparative performance analysis of quantum machine
+  learning architectures for credit card fraud detection,'' {\em Applied
+  Intelligence}, 2026.
+
+\bibitem{ganguly2026}
+S.~Ganguly, ``Hybrid classical--quantum learning for space based data centers:
+  A cuda-q study of variational and photonic backends,'' {\em Research Square},
+  2026.
+
+\bibitem{kim2026}
+S.~Kim {\em et~al.}, ``Image classification and explainability analysis using
+  gpu-based cuda-q hybrid quantum neural networks,'' {\em IEEE Access 14
+  (2026)}, 2026.
+
+\bibitem{kulkarni2026}
+V.~Kulkarni {\em et~al.}, ``Efficient transpilation of openqasm 3.0 dynamic
+  circuits to cuda-q: Performance and expressiveness advantages,'' in {\em
+  International Conference on Quantum Communications, Networking, and Computing
+  (QCNC).}, IEEE, 2026.
+
+\bibitem{liu2026}
+J.~Liu, P.~Li, and Y.~Wang, ``Graph neural networks for modeling complex
+  dependencies in global supply chain networks,'' {\em Journal of Computing and
+  Electronic Information Management (JCEIM)}, 2026.
+
+\bibitem{marevac2026}
+E.~Marevac {\em et~al.}, ``Accelerated quantum algorithm prototyping: Modular
+  simulation and noise modelling with cuda support,'' {\em Journal of Advances
+  in Information Technology 17.6}, 2026.
+
+\bibitem{rahman2026a}
+I.~U. Rahman, K.~P. Mishu, A.~Hassaan, M.~T. Ahmed, A.~Sarker, and N.~K. Papri,
+  ``Ai and machine learning driven supply chain and logistics optimization in
+  the us automotive industry,'' in {\em Proceedings of the 9th International
+  Conference on Inventive Computation Technologies (ICICT)}, IEEE, 2026.
+
+\bibitem{rahman2026}
+R.~Rahman {\em et~al.}, ``Quantum convolutional neural networks: A survey on
+  architectures, applications, and future directions,'' {\em IEEE Transactions
+  on Neural Networks and Learning Systems}, 2026.
+
+\bibitem{ylmaz2026}
+E.~Yılmaz {\em et~al.}, ``Simulating quantum attacks on classical cryptography
+  with cuda-q,'' in {\em 2026 5th International Informatics and Software
+  Engineering Conference (IISEC).}, IEEE, 2026.
+
+\bibitem{ziaria2026}
+M.~Ziaria, A.~Soheyli, and A.~A. Taleizadeh, ``An intelligent analytics
+  framework for supplier selection and delay risk management in sustainable
+  supply chains,'' {\em Supply Chain Analytics}, 2026.
+
+\bibitem{bhutta2025}
+M.~Bhutta {\em et~al.}, ``Evaluating classical and quantum machine learning for
+  credit card fraud detection: Performance and economic impact,'' in {\em Cyber
+  Awareness and Research Symposium (CARS).}, IEEE, 2025.
+
+\bibitem{chaudhary2025}
+P.~Chaudhary {\em et~al.}, ``Pattern recognition using qml algorithm for fraud
+  detection in banking,'' in {\em 2025 International Conference on Networks and
+  Cryptology (NETCRYPT).}, IEEE, 2025.
+
+\bibitem{das2025}
+S.~Das {\em et~al.}, ``Qfdnn: A resource-efficient variational quantum feature
+  deep neural networks for fraud detection and loan prediction,'' {\em IEEE
+  Transactions on Computational Social Systems}, 2025.
+
+\bibitem{gurajada2025}
+H.~N.~H. Gurajada {\em et~al.}, ``Quantum computing for fraud detection in
+  real-time payment systems,'' in {\em 2025 International Conference on
+  Computing Technologies \& Data Communication (ICCTDC).}, IEEE, 2025.
+
+\bibitem{hasan2025}
+M.~R. Hasan, ``Building robust ai and machine learning models for supplier risk
+  management: A data-driven strategy for enhancing supply chain resilience in
+  the usa,'' {\em Advances in Consumer Research}, 2025.
+
+\bibitem{innan2025}
+N.~Innan {\em et~al.}, ``Qfnn-ffd: Quantum federated neural network for
+  financial fraud detection,'' in {\em 2025 IEEE International Conference on
+  Quantum Software (QSW).}, IEEE, 2025.
+
+\bibitem{majumder2025}
+S.~Majumder {\em et~al.}, ``Quanfraud: Quantum state verification scheme for
+  fraud detection in iot-assisted quantum-blockchain networks,'' {\em IEEE
+  Transactions on Services Computing}, 2025.
+
+\bibitem{mohammadisavadkoohi2025}
+E.~Mohammadisavadkoohi {\em et~al.}, ``A systematic review on quantum machine
+  learning applications in classification,'' {\em IEEE transactions on
+  artificial intelligence}, 2025.
+
+\bibitem{ren2025}
+L.~Ren {\em et~al.}, ``Quantum support vector machine for fraud detection,'' in
+  {\em 2025 IEEE 4th International Conference on Computing, Communication,
+  Perception and Quantum Technology (CCPQT).}, IEEE, 2025.
+
+\bibitem{rubinshtein2025}
+E.~Rubinshtein {\em et~al.}, ``Performance characterization of quantum
+  simulation in cuda-q,'' in {\em 2025 IEEE International Conference on Quantum
+  Computing and Engineering (QCE)}, IEEE, 2025.
+
+\bibitem{siddiqui2025}
+S.~Siddiqui {\em et~al.}, ``Framework for implementing quantum neural networks
+  in wireless communications,'' {\em IEEE Access}, 2025.
+
+\bibitem{subbiyan2025}
+B.~Subbiyan {\em et~al.}, ``A quantum-enhanced artificial neural network model
+  for efficient medical image compression,'' {\em IEEE Access 13}, 2025.
+
+\bibitem{wu2025}
+X.~Wu, Y.~Huang, and W.~Bao, ``Using gnn to identify supply chain network
+  structure,'' {\em International Journal of Big Data Intelligent Technology},
+  2025.
+
+\bibitem{edhrabooh2024}
+K.~M. Edhrabooh {\em et~al.}, ``Ai and ml applications in supply chain
+  management field: A systematic literature review,'' in {\em 2024 ASU
+  International Conference in Emerging Technologies for Sustainability and
+  Intelligent Systems (ICETSIS)}, IEEE, 2024.
+
+\bibitem{huot2024}
+C.~Huot {\em et~al.}, ``Quantum autoencoder for enhanced fraud detection in
+  imbalanced credit card dataset,'' {\em IEEE Access 12}, 2024.
+
+\bibitem{kamble2024}
+S.~S. Kamble {\em et~al.}, ``Fraud detection using quantum machine learning
+  (qml),'' in {\em 2024 Global Conference on Communications and Information
+  Technologies (GCCIT).}, IEEE, 2024.
+
+\bibitem{kan2024}
+Y.~Kan {\em et~al.}, ``Applications of large-scale quantum neural networks
+  based on distributed quantum computing,'' in {\em 6th International
+  Conference on Wireless Communications and Signal Processing (WCSP). IEEE},
+  IEEE, 2024.
+
+\bibitem{kukliansky2024}
+A.~Kukliansky {\em et~al.}, ``Network anomaly detection using quantum neural
+  networks on noisy quantum computers,'' {\em EEE Transactions on Quantum
+  Engineering 5 (2024)}, 2024.
+
+\bibitem{mahmood2024}
+A.~H. MAHMOOD, ``Cybersecurity in the era of quantum computing: Preparing for
+  post-quantum threats,'' {\em NANOTECHNOLOGY}, 2024.
+
+\bibitem{madje2024}
+U.~P. Madje {\em et~al.}, ``A conceptual model of quantum cryptography
+  techniques used to provide online banking transactions security,'' in {\em
+  2024 International Conference on Trends in Quantum Computing and Emerging
+  Business Technologies.}, IEEE, 2024.
+
+\bibitem{phillipson2024}
+F.~Phillipson, ``Quantum computing in logistics and supply chain management an
+  overview,'' in {\em International Conference on Information Science and
+  Communications Technologies}, arXiv, 2024.
+
+\bibitem{sayyad2024}
+J.~K. Sayyad {\em et~al.}, ``Optimizing e-commerce supply chains with
+  categorical boosting: A predictive modeling framework,'' {\em IEEE Access 12
+  (2024)}, 2024.
+
+\bibitem{soni2024}
+U.~Soni, A.~Kumar, S.~Bansal, and S.~Sharma, ``Quantum computing for supply
+  chain management and logistics,'' in {\em International Conference on
+  Information Science and Communication Technologies - Applications, Trends and
+  Opportunities}, IEEE, 2024.
+
+\bibitem{stein2024}
+J.~Stein {\em et~al.}, ``Cuaoa: A novel cuda-accelerated simulation framework
+  for the qaoa,'' in {\em IEEE International Conference on Quantum Computing
+  and Engineering}, IEEE, 2024.
+
+\bibitem{vuppala2024}
+T.~Vuppala {\em et~al.}, ``Hybrid quantum-classical method for bank account
+  fraud detection using quantum encoding and quantum machine learning,'' in
+  {\em 2024 IEEE MIT Undergraduate Research Technology Conference (URTC).},
+  IEEE, 2024.
+
+\bibitem{bayraktar2023}
+H.~Bayraktar {\em et~al.}, ``cuquantum sdk: A high-performance library for
+  accelerating quantum science,'' {\em cuquantum sdk: A high-performance
+  library for accelerating quantum science}, 2023.
+
+\bibitem{kim2023}
+J.-S. Kim {\em et~al.}, ``Cuda quantum: The platform for integrated
+  quantum-classical computing,'' in {\em 60th ACM/IEEE Design Automation
+  Conference (DAC).}, IEEE, 2023.
+
+\end{thebibliography}
