@@ -22,3 +22,12 @@ data/benchmark/
 experiments/
 report_build/node_modules/
 QGNN_V4_Final_Research_Report.pdf
+
+# Elliptic++ benchmark (scripts/run_elliptic_benchmark.py): unlike the
+# other data/raw/ sources, txs_features.csv alone is ~694MB -- far past
+# GitHub's non-LFS size limit and not "small" -- so this one stays
+# ignored. Re-fetch via:
+#   curl -o data/raw/elliptic_pp/txs_features.csv \
+#     https://media.githubusercontent.com/media/git-disl/EllipticPlusPlus/main/Transactions%20Dataset/txs_features.csv
+#   (same URL pattern for txs_classes.csv, txs_edgelist.csv)
+data/raw/elliptic_pp/
