@@ -35,7 +35,10 @@ abstract, the preprint or the search results. It does not prove that none exists
   IEEE Xplore: https://ieeexplore.ieee.org/document/10491606/ ·
   preprint: https://arxiv.org/abs/2311.04244
 - **Task:** supply-chain (corporate investment) risk classification of
-  enterprises on an integrated-circuit supply chain graph.
+  enterprises on an integrated-circuit supply chain graph. It extends KTGNN
+  ("Predicting the Silent Majority on Graphs", WWW 2023, same group): listed
+  firms have rich features and labels, while most firms are unlisted with
+  sparse features, so the model transfers knowledge from the former to the latter.
 - **Method:** graph embedding collapses each product's supply chain into a
   product network, then a centrality-based knowledge-transfer module handles
   domain difference and data hunger.
@@ -143,9 +146,13 @@ abstract, the preprint or the search results. It does not prove that none exists
 
 - **[6] Innan et al. (2024)**, "Financial fraud detection using quantum graph
   neural networks," *Quantum Machine Intelligence* (Springer) 6(1), art. 7.
-  DOI 10.1007/s42484-024-00143-6. Reports **AUC ≈ 0.85** for the QGNN, above
-  the classical GNN. Adding that number to Table 1 makes the "≈3% gain" row
-  concrete.
+  DOI 10.1007/s42484-024-00143-6. Reports **AUC ≈ 0.85** for the QGNN
+  vs **≈ 0.77 for classical GraphSAGE**, the same classical baseline as this
+  project. Adding those numbers makes the Table 1 row concrete. This
+  project's own results point the other way: on the primary split, classical
+  GraphSAGE has ROC-AUC 0.987 vs QGNN 0.978, and PR-AUC is tied within std
+  (`QGNN_V4_REFERENCE_COMPARISON.csv`). That contrast is worth discussing in
+  the report.
 
 ---
 
