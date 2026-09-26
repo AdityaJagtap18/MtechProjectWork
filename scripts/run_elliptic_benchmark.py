@@ -171,7 +171,7 @@ def load_cached() -> dict:
 # Stage 2: classical GraphSAGE-Full (reference + embedding source)
 # --------------------------------------------------------------------------- #
 
-def train_classical(seed: int, epochs: int = 60, patience: int = 10, hidden_dim: int = 128) -> dict:
+def train_classical(seed: int, epochs: int = 90, patience: int = 20, hidden_dim: int = 128) -> dict:
     d = load_cached()
     X, edge_index, y = d["X"], d["edge_index"], d["y"]
     train_mask, val_mask, test_mask = d["train_mask"], d["val_mask"], d["test_mask"]
@@ -252,10 +252,17 @@ def train_qgnn_standalone(seed: int, n_qubits: int = 6, n_layers: int = 1, mlp_h
     X, y = d["X"].numpy(), d["y"]
     train_mask, val_mask, test_mask = d["train_mask"].numpy(), d["val_mask"].numpy(), d["test_mask"].numpy()
 
-    # PCA fit on TRAIN labeled rows only (leakage guard) -> n_qubits dims
-    pca = PCA(n_components=n_qubits, random_state=seed).fit(X[train_mask])
+    # PCA fit on TRAIN labeled rows only (leakage guard) -> n_qubits dims.
+    # whiten=True: without it, raw PCA scores are badly variance-skewed at
+    # this compression ratio (182 raw features -> 6 components) -- measured
+    # directly: PC0 has std~4.6 vs PC5's std~2.5, and angle-encoding via
+    # tanh(z)*pi saturates (|tanh(z)|>0.95) on 25-78% of PC0..PC5's values,
+    # meaning most of the circuit's rotation range collapses to a near-binary
+    # +-pi signal instead of a continuous one. Whitening (unit variance per
+    # component) drops saturation to 2-8.5% across all six components.
+    pca = PCA(n_components=n_qubits, random_state=seed, whiten=True).fit(X[train_mask])
     X_reduced = pca.transform(X).astype(np.float32)
-    print(f"[qgnn seed={seed}] PCA explained variance ratio sum={pca.explained_variance_ratio_.sum():.3f}")
+    print(f"[qgnn seed={seed}] PCA explained variance ratio sum={pca.explained_variance_ratio_.sum():.3f} (whitened before angle-encoding)")
 
     set_seed(seed)
     model = QGNN(n_qubits=n_qubits, n_layers=n_layers, mlp_hidden=mlp_hidden)
@@ -352,6 +359,14 @@ def train_hybrid_qgnn(seed: int, n_qubits: int = 6, n_layers: int = 2,
     model = HybridQuantumHeadLayerNorm(
         in_dim=H.shape[1], n_qubits=n_qubits, n_layers=n_layers, ansatz="strongly_entangling",
         elementwise_affine=False,  # matches this project's own "standing reference" config
+        # pre_projection_norm=True: measured directly -- the frozen
+        # GraphSAGE embedding's per-dimension std ranges from 0.002 to 9.45
+        # (~4700x spread) on the train split. Without normalizing first, the
+        # single Linear(in_dim, n_qubits) reduction has to learn to correct
+        # for that scale imbalance on top of learning a useful projection;
+        # LayerNorm(in_dim) here does the scale-correction directly so the
+        # reduction layer's job is just "find a good subspace."
+        pre_projection_norm=True,
     )
     y_t = y.float()
 
