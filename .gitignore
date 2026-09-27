@@ -20,3 +20,9 @@ data/benchmark/
 # scripts/run_graphsage_experiment.py + configs/graphsage.yaml, same
 # reasoning as data/generated/ above.
 experiments/
+
+# DataCo external benchmark (92MB) breaks the "small" assumption the
+# data/raw/ exception above relies on -- regenerable via
+# scripts/download_dataco.py; provenance.json and the tiny (3.4KB)
+# description file stay tracked.
+data/raw/dataco/DataCoSupplyChainDataset.csv

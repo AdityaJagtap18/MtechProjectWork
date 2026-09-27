@@ -1,0 +1,16 @@
+{
+  "source_name": "DataCo SMART SUPPLY CHAIN FOR BIG DATA ANALYSIS",
+  "source_url": "https://data.mendeley.com/datasets/8gx2fvg2k6/5",
+  "download_url": "https://data.mendeley.com/public-api/zip/8gx2fvg2k6/download/5",
+  "doi": "10.17632/8gx2fvg2k6.5",
+  "citation": "Constante, Fabian; Silva, Fernando; Pereira, Antonio (2019), \"DataCo SMART SUPPLY CHAIN FOR BIG DATA ANALYSIS\", Mendeley Data, V5, doi: 10.17632/8gx2fvg2k6.5",
+  "license": "CC-BY-4.0",
+  "data_type": "order-item level e-commerce/logistics transactions, 2015-2019",
+  "observed_or_synthetic": "observed",
+  "rows_columns": "180519 rows x 53 columns (DataCoSupplyChainDataset.csv)",
+  "fields_used": "see notebooks/dataco_exploration.ipynb for the feature/leakage audit -- no fixed list here since that audit is the point",
+  "fields_not_used": "tokenized_access_logs.csv (91MB clickstream, no risk-modeling relevance) -- part of Mendeley's bundle but discarded, not extracted",
+  "known_data_quality_issues": "'Customer Password' column contains plaintext-looking values and 'Customer Email'/'Customer Fname'/'Customer Lname'/'Customer Street' are PII-shaped -- all excluded as features, not just because they're non-predictive but because they should never be modeled on even for a public toy dataset",
+  "transformations": "none at download time",
+  "access_date": "2026-09-27"
+}
