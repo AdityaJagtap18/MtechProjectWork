@@ -1,0 +1,86 @@
+<svg viewBox="0 0 980 480" xmlns="http://www.w3.org/2000/svg" font-family="Helvetica, Arial, sans-serif">
+  <rect x="0" y="0" width="980" height="480" fill="#ffffff"/>
+  <text x="490" y="28" text-anchor="middle" font-size="17" font-weight="bold" fill="#111">Variational Quantum Circuit (4-qubit illustration; 6/8-qubit configs are identical in structure)</text>
+
+  <!-- qubit lines -->
+  <g stroke="#333" stroke-width="1.3">
+    <line x1="80" y1="90" x2="920" y2="90"/>
+    <line x1="80" y1="170" x2="920" y2="170"/>
+    <line x1="80" y1="250" x2="920" y2="250"/>
+    <line x1="80" y1="330" x2="920" y2="330"/>
+  </g>
+  <text x="55" y="95" text-anchor="end" font-size="13" fill="#111">|0&#10217; q0</text>
+  <text x="55" y="175" text-anchor="end" font-size="13" fill="#111">|0&#10217; q1</text>
+  <text x="55" y="255" text-anchor="end" font-size="13" fill="#111">|0&#10217; q2</text>
+  <text x="55" y="335" text-anchor="end" font-size="13" fill="#111">|0&#10217; q3</text>
+
+  <!-- stage labels -->
+  <text x="175" y="60" text-anchor="middle" font-size="12" font-weight="bold" fill="#0c447c">1. Angle encoding</text>
+  <text x="410" y="60" text-anchor="middle" font-size="12" font-weight="bold" fill="#3c3489">2. Variational layer (trainable)</text>
+  <text x="640" y="60" text-anchor="middle" font-size="12" font-weight="bold" fill="#712b13">3. Entanglement</text>
+  <text x="850" y="60" text-anchor="middle" font-size="12" font-weight="bold" fill="#27500a">4. Measurement</text>
+
+  <!-- 1. AngleEmbedding: RY(angle_i) on each wire -->
+  <g>
+    <rect x="145" y="72" width="60" height="36" fill="#e6f1fb" stroke="#185fa5" stroke-width="1.3"/>
+    <text x="175" y="95" text-anchor="middle" font-size="12" fill="#0c447c">RY(&#952;&#8320;)</text>
+    <rect x="145" y="152" width="60" height="36" fill="#e6f1fb" stroke="#185fa5" stroke-width="1.3"/>
+    <text x="175" y="175" text-anchor="middle" font-size="12" fill="#0c447c">RY(&#952;&#8321;)</text>
+    <rect x="145" y="232" width="60" height="36" fill="#e6f1fb" stroke="#185fa5" stroke-width="1.3"/>
+    <text x="175" y="255" text-anchor="middle" font-size="12" fill="#0c447c">RY(&#952;&#8322;)</text>
+    <rect x="145" y="312" width="60" height="36" fill="#e6f1fb" stroke="#185fa5" stroke-width="1.3"/>
+    <text x="175" y="335" text-anchor="middle" font-size="12" fill="#0c447c">RY(&#952;&#8323;)</text>
+  </g>
+
+  <!-- 2. Trainable RY -->
+  <g>
+    <rect x="380" y="72" width="60" height="36" fill="#eeedfe" stroke="#534ab7" stroke-width="1.3"/>
+    <text x="410" y="95" text-anchor="middle" font-size="12" fill="#3c3489">RY(w&#8320;)</text>
+    <rect x="380" y="152" width="60" height="36" fill="#eeedfe" stroke="#534ab7" stroke-width="1.3"/>
+    <text x="410" y="175" text-anchor="middle" font-size="12" fill="#3c3489">RY(w&#8321;)</text>
+    <rect x="380" y="232" width="60" height="36" fill="#eeedfe" stroke="#534ab7" stroke-width="1.3"/>
+    <text x="410" y="255" text-anchor="middle" font-size="12" fill="#3c3489">RY(w&#8322;)</text>
+    <rect x="380" y="312" width="60" height="36" fill="#eeedfe" stroke="#534ab7" stroke-width="1.3"/>
+    <text x="410" y="335" text-anchor="middle" font-size="12" fill="#3c3489">RY(w&#8323;)</text>
+  </g>
+
+  <!-- 3. CNOT chain: q0-q1, q1-q2, q2-q3 -->
+  <g stroke="#712b13" stroke-width="1.6" fill="#712b13">
+    <line x1="560" y1="90" x2="560" y2="170"/>
+    <circle cx="560" cy="90" r="5"/>
+    <circle cx="560" cy="170" r="11" fill="none" stroke="#712b13" stroke-width="1.6"/>
+    <line x1="552" y1="170" x2="568" y2="170"/>
+    <line x1="560" y1="162" x2="560" y2="178"/>
+
+    <line x1="640" y1="170" x2="640" y2="250"/>
+    <circle cx="640" cy="170" r="5"/>
+    <circle cx="640" cy="250" r="11" fill="none" stroke="#712b13" stroke-width="1.6"/>
+    <line x1="632" y1="250" x2="648" y2="250"/>
+    <line x1="640" y1="242" x2="640" y2="258"/>
+
+    <line x1="720" y1="250" x2="720" y2="330"/>
+    <circle cx="720" cy="250" r="5"/>
+    <circle cx="720" cy="330" r="11" fill="none" stroke="#712b13" stroke-width="1.6"/>
+    <line x1="712" y1="330" x2="728" y2="330"/>
+    <line x1="720" y1="322" x2="720" y2="338"/>
+  </g>
+
+  <!-- re-upload note -->
+  <text x="60" y="410" font-size="11" fill="#666" font-style="italic">Data re-upload variant: repeats stage 1 (fixed AngleEmbedding, same &#952;) between each additional</text>
+  <text x="60" y="425" font-size="11" fill="#666" font-style="italic">variational layer -- adds depth/expressivity without new trainable parameters beyond one RY weight per qubit per layer.</text>
+
+  <!-- 4. Measurement -->
+  <g>
+    <rect x="860" y="72" width="50" height="36" fill="#eaf3de" stroke="#3b6d11" stroke-width="1.3"/>
+    <text x="885" y="95" text-anchor="middle" font-size="16" fill="#27500a">M</text>
+    <rect x="860" y="152" width="50" height="36" fill="#eaf3de" stroke="#3b6d11" stroke-width="1.3"/>
+    <text x="885" y="175" text-anchor="middle" font-size="16" fill="#27500a">M</text>
+    <rect x="860" y="232" width="50" height="36" fill="#eaf3de" stroke="#3b6d11" stroke-width="1.3"/>
+    <text x="885" y="255" text-anchor="middle" font-size="16" fill="#27500a">M</text>
+    <rect x="860" y="312" width="50" height="36" fill="#eaf3de" stroke="#3b6d11" stroke-width="1.3"/>
+    <text x="885" y="335" text-anchor="middle" font-size="16" fill="#27500a">M</text>
+  </g>
+
+  <text x="490" y="450" text-anchor="middle" font-size="12" fill="#111">Encoding: &#952;&#8305; = tanh(x&#8305;)&#183;&#960; (bounds every rotation to (-&#960;,&#960;) regardless of standardized input magnitude)</text>
+  <text x="490" y="468" text-anchor="middle" font-size="12" fill="#111">Measurement: expectation value &#10216;&#968;|Z&#8305;|&#968;&#10217; per qubit, i &#8712; {0,...,n_qubits-1} &#8594; classical MLP head &#8594; logit</text>
+</svg>
