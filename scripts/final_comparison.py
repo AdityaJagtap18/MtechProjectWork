@@ -244,7 +244,8 @@ def main():
     print(f"\nsaved to {RESULTS_PATH}")
 
     print("\n=== summary (mean, collapse-excluded for qgnn) ===")
-    df_clean = df[~df.get("collapsed", pd.Series(False, index=df.index)).fillna(False)]
+    is_collapsed = df["collapsed"].fillna(False).astype(bool) if "collapsed" in df.columns else pd.Series(False, index=df.index)
+    df_clean = df[~is_collapsed]
     summary = df_clean.groupby("model")[["f1", "roc_auc", "pr_auc", "balanced_accuracy", "brier_score"]].agg(["mean", "std"])
     print(summary)
 
