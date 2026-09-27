@@ -1,0 +1,117 @@
+<svg viewBox="0 0 1180 900" xmlns="http://www.w3.org/2000/svg" font-family="Helvetica, Arial, sans-serif">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#444"/>
+    </marker>
+  </defs>
+  <rect x="0" y="0" width="1180" height="900" fill="#ffffff"/>
+
+  <text x="590" y="30" text-anchor="middle" font-size="20" font-weight="bold" fill="#111">DataCo Late-Delivery-Risk: System Architecture</text>
+
+  <!-- Stage 0: Raw data -->
+  <rect x="470" y="55" width="240" height="50" rx="6" fill="#e6f1fb" stroke="#185fa5" stroke-width="1.5"/>
+  <text x="590" y="76" text-anchor="middle" font-size="13" font-weight="bold" fill="#0c447c">DataCo Smart Supply Chain</text>
+  <text x="590" y="94" text-anchor="middle" font-size="11" fill="#0c447c">180,519 orders, 53 columns</text>
+
+  <line x1="590" y1="105" x2="590" y2="135" stroke="#444" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- Stage 1: Preprocessing -->
+  <rect x="410" y="138" width="360" height="60" rx="6" fill="#eaf3de" stroke="#3b6d11" stroke-width="1.5"/>
+  <text x="590" y="160" text-anchor="middle" font-size="13" font-weight="bold" fill="#27500a">Leakage audit + chronological split</text>
+  <text x="590" y="178" text-anchor="middle" font-size="11" fill="#27500a">70/15/15 train/val/test, pre-shipment features only</text>
+  <text x="590" y="192" text-anchor="middle" font-size="10" fill="#3b6d11">(drops Delivery Status, Days-for-shipping-real, PII columns)</text>
+
+  <line x1="590" y1="198" x2="590" y2="225" stroke="#444" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- Branch point -->
+  <line x1="240" y1="225" x2="940" y2="225" stroke="#444" stroke-width="1.5"/>
+  <line x1="240" y1="225" x2="240" y2="250" stroke="#444" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <line x1="590" y1="225" x2="590" y2="250" stroke="#444" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <line x1="940" y1="225" x2="940" y2="250" stroke="#444" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- Column A: Classical -->
+  <rect x="100" y="253" width="280" height="55" rx="6" fill="#fbeaf0" stroke="#993556" stroke-width="1.5"/>
+  <text x="240" y="275" text-anchor="middle" font-size="13" font-weight="bold" fill="#72243e">Classical baselines</text>
+  <text x="240" y="293" text-anchor="middle" font-size="11" fill="#72243e">Logistic Regression, Random Forest</text>
+
+  <line x1="240" y1="308" x2="240" y2="350" stroke="#444" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <rect x="120" y="353" width="240" height="45" rx="6" fill="#f1efe8" stroke="#5f5e5a" stroke-width="1.2"/>
+  <text x="240" y="380" text-anchor="middle" font-size="12" fill="#2c2c2a">Prediction (0.5 threshold)</text>
+
+  <!-- Column B: Graph + GraphSAGE -->
+  <rect x="450" y="253" width="280" height="70" rx="6" fill="#e1f5ee" stroke="#0f6e56" stroke-width="1.5"/>
+  <text x="590" y="273" text-anchor="middle" font-size="13" font-weight="bold" fill="#04342c">Derived heterogeneous graph</text>
+  <text x="590" y="291" text-anchor="middle" font-size="10.5" fill="#04342c">order / customer / product / region / order_country</text>
+  <text x="590" y="307" text-anchor="middle" font-size="10" fill="#0f6e56">(+ train-only historical rates, 7-day congestion feature)</text>
+
+  <line x1="590" y1="323" x2="590" y2="350" stroke="#444" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <rect x="470" y="353" width="240" height="55" rx="6" fill="#e1f5ee" stroke="#0f6e56" stroke-width="1.5"/>
+  <text x="590" y="375" text-anchor="middle" font-size="13" font-weight="bold" fill="#04342c">HeteroGraphSAGE</text>
+  <text x="590" y="393" text-anchor="middle" font-size="11" fill="#04342c">2-layer, mean aggregation, order-node readout</text>
+
+  <line x1="590" y1="408" x2="590" y2="435" stroke="#444" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <rect x="470" y="438" width="240" height="45" rx="6" fill="#f1efe8" stroke="#5f5e5a" stroke-width="1.2"/>
+  <text x="590" y="465" text-anchor="middle" font-size="12" fill="#2c2c2a">Prediction (128-dim embedding)</text>
+
+  <!-- Column C: Quantum-first -->
+  <rect x="800" y="253" width="280" height="55" rx="6" fill="#eeedfe" stroke="#534ab7" stroke-width="1.5"/>
+  <text x="940" y="275" text-anchor="middle" font-size="13" font-weight="bold" fill="#26215c">Raw tabular features</text>
+  <text x="940" y="293" text-anchor="middle" font-size="11" fill="#26215c">same features as classical baselines</text>
+
+  <line x1="940" y1="308" x2="940" y2="335" stroke="#444" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- Two paths into quantum circuit: from GraphSAGE embedding AND from raw features -->
+  <line x1="710" y1="480" x2="880" y2="480" stroke="#888" stroke-width="1.3" stroke-dasharray="4,3"/>
+  <text x="795" y="472" text-anchor="middle" font-size="9.5" fill="#666">frozen-embedding path (original)</text>
+
+  <rect x="590" y="483" width="240" height="50" rx="6" fill="#faece7" stroke="#993c1d" stroke-width="1.5"/>
+  <text x="710" y="503" text-anchor="middle" font-size="12" font-weight="bold" fill="#712b13">PCA reduction (train-fit)</text>
+  <text x="710" y="519" text-anchor="middle" font-size="10.5" fill="#712b13">embedding &#8594; 4/6/8 qubits</text>
+
+  <rect x="850" y="483" width="240" height="50" rx="6" fill="#faece7" stroke="#993c1d" stroke-width="1.5"/>
+  <text x="970" y="503" text-anchor="middle" font-size="12" font-weight="bold" fill="#712b13">PCA reduction (train-fit)</text>
+  <text x="970" y="519" text-anchor="middle" font-size="10.5" fill="#712b13">raw features &#8594; 6 qubits</text>
+
+  <line x1="710" y1="410" x2="710" y2="483" stroke="#888" stroke-width="1.3" stroke-dasharray="4,3" marker-end="url(#arrow)"/>
+  <line x1="940" y1="335" x2="970" y2="483" stroke="#444" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <line x1="710" y1="533" x2="710" y2="560" stroke="#888" stroke-width="1.3" stroke-dasharray="4,3" marker-end="url(#arrow)"/>
+  <line x1="970" y1="533" x2="970" y2="560" stroke="#2e7d32" stroke-width="2" marker-end="url(#arrow)"/>
+
+  <!-- Quantum circuits -->
+  <rect x="590" y="563" width="240" height="65" rx="6" fill="#f5f0fa" stroke="#7f77dd" stroke-width="1.5" stroke-dasharray="5,3"/>
+  <text x="710" y="583" text-anchor="middle" font-size="12" font-weight="bold" fill="#3c3489">Variational quantum circuit</text>
+  <text x="710" y="600" text-anchor="middle" font-size="10.5" fill="#3c3489">AngleEmbedding + RY layers + CNOT chain</text>
+  <text x="710" y="616" text-anchor="middle" font-size="10" fill="#7f77dd">(frozen embedding input -- did not beat classical)</text>
+
+  <rect x="850" y="563" width="240" height="65" rx="6" fill="#e8f5e9" stroke="#2e7d32" stroke-width="2"/>
+  <text x="970" y="583" text-anchor="middle" font-size="12" font-weight="bold" fill="#1b5e20">Variational quantum circuit</text>
+  <text x="970" y="600" text-anchor="middle" font-size="10.5" fill="#1b5e20">AngleEmbedding + RY layers + CNOT chain</text>
+  <text x="970" y="616" text-anchor="middle" font-size="10" fill="#2e7d32">(raw-feature input -- best QGNN result)</text>
+
+  <line x1="710" y1="628" x2="710" y2="655" stroke="#888" stroke-width="1.3" stroke-dasharray="4,3" marker-end="url(#arrow)"/>
+  <line x1="970" y1="628" x2="970" y2="655" stroke="#2e7d32" stroke-width="2" marker-end="url(#arrow)"/>
+
+  <rect x="590" y="658" width="240" height="42" rx="6" fill="#f1efe8" stroke="#5f5e5a" stroke-width="1.2" stroke-dasharray="4,3"/>
+  <text x="710" y="683" text-anchor="middle" font-size="11.5" fill="#2c2c2a">MLP head &#8594; logit</text>
+
+  <rect x="850" y="658" width="240" height="42" rx="6" fill="#e8f5e9" stroke="#2e7d32" stroke-width="1.5"/>
+  <text x="970" y="683" text-anchor="middle" font-size="11.5" fill="#1b5e20">MLP head &#8594; logit</text>
+
+  <!-- Converge to evaluation -->
+  <line x1="240" y1="398" x2="240" y2="740" stroke="#444" stroke-width="1.3"/>
+  <line x1="590" y1="465" x2="590" y2="740" stroke="#444" stroke-width="1.3"/>
+  <line x1="710" y1="700" x2="710" y2="740" stroke="#888" stroke-width="1.3" stroke-dasharray="4,3"/>
+  <line x1="970" y1="700" x2="970" y2="740" stroke="#2e7d32" stroke-width="2"/>
+  <line x1="240" y1="740" x2="970" y2="740" stroke="#444" stroke-width="1.3"/>
+  <line x1="590" y1="740" x2="590" y2="765" stroke="#444" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- Evaluation -->
+  <rect x="360" y="768" width="460" height="90" rx="6" fill="#faeeda" stroke="#854f0b" stroke-width="1.5"/>
+  <text x="590" y="790" text-anchor="middle" font-size="13" font-weight="bold" fill="#412402">Evaluation (held-out test set)</text>
+  <text x="590" y="810" text-anchor="middle" font-size="11" fill="#412402">Accuracy, Precision, Recall, F1, ROC-AUC, PR-AUC,</text>
+  <text x="590" y="827" text-anchor="middle" font-size="11" fill="#412402">Balanced Accuracy, Brier score, Confusion matrix</text>
+  <text x="590" y="847" text-anchor="middle" font-size="10" fill="#854f0b">multi-seed mean &#177; std, mode-collapse flagged and excluded</text>
+
+  <text x="590" y="880" text-anchor="middle" font-size="10" fill="#888">Dashed path = original (frozen-embedding) QGNN, did not beat classical baselines &#8226; Solid green path = quantum-first, best QGNN result</text>
+</svg>
