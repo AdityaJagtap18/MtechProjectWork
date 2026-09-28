@@ -26,7 +26,7 @@ import shutil
 import numpy as np
 import pandas as pd
 
-from scm_dataset.modeling.baselines import run_logistic_regression_baseline, run_majority_baseline
+from scm_dataset.modeling.baselines import run_logistic_regression_baseline, run_majority_baseline, run_random_forest_baseline
 from scm_dataset.modeling.config import load_config
 from scm_dataset.modeling.evaluate import evaluate_experiment, render_all_plots
 from scm_dataset.modeling.experiment import build_run_metadata, new_run_dir, save_config, write_json
@@ -125,7 +125,7 @@ def main() -> None:
     parser.add_argument("--config", default="configs/graphsage.yaml")
     parser.add_argument("--seeds", default=None, help="Comma-separated seeds; defaults to the config's `experiment.seeds` first entry only unless --all-seeds is given.")
     parser.add_argument("--all-seeds", action="store_true", help="Run every seed listed in the config's experiment.seeds.")
-    parser.add_argument("--baselines", action="store_true", help="Also run Majority + Logistic Regression baselines.")
+    parser.add_argument("--baselines", action="store_true", help="Also run Majority + Logistic Regression + Random Forest baselines.")
     parser.add_argument(
         "--feature-mode", default=None,
         choices=["full", "dynamic_only", "static_only", "region_risk_only", "static_plus_graph"],
@@ -214,6 +214,13 @@ def main() -> None:
         print(f"Saved logistic regression baseline -> {run_dir}")
         if "test" in logreg.metrics_by_split:
             m = logreg.metrics_by_split["test"]
+            print(f"  test: pr_auc={m['pr_auc']} f1={m['f1']:.4f} precision={m['precision']:.4f} recall={m['recall']:.4f}")
+
+        random_forest = run_random_forest_baseline(prepared, config.threshold, seed=seeds[0])
+        run_dir = _save_baseline_run("random_forest_baseline", random_forest, prepared, config)
+        print(f"Saved random forest baseline -> {run_dir}")
+        if "test" in random_forest.metrics_by_split:
+            m = random_forest.metrics_by_split["test"]
             print(f"  test: pr_auc={m['pr_auc']} f1={m['f1']:.4f} precision={m['precision']:.4f} recall={m['recall']:.4f}")
 
 

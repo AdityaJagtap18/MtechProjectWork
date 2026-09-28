@@ -17,7 +17,53 @@ is compared against under the same protocol (plan §71/§72).
 |---|---:|---:|---:|---:|---:|---:|
 | Majority | 0.067 | 0.500 | 0.000 | 0.000 | 0.000 | 0.064 |
 | Logistic Regression | 0.304 | 0.821 | 0.181 | 0.632 | 0.282 | 0.145 |
+| Random Forest (seed 42) | 0.908 | 0.996 | 0.870 | 0.942 | 0.905 | 0.057 |
 | **GraphSAGE (mean ± std, 5 seeds)** | **0.807 ± 0.066** | **0.987 ± 0.008** | **0.522 ± 0.042** | **0.968 ± 0.016** | **0.677 ± 0.035** | **0.042 ± 0.012** |
+
+**Random Forest (added after the classical baselines were revisited to see
+whether they could be improved) beats every other model here, GraphSAGE
+included, on this within-dataset test split** -- using the exact same
+supplier-only feature table Logistic Regression uses, no graph
+information at all (`modeling/baselines.py::run_random_forest_baseline`,
+`max_depth=6`/`min_samples_leaf=5` chosen against validation PR-AUC, never
+test). This says Logistic Regression specifically was a weak choice of
+*classical* model on this benchmark -- its linear decision boundary can't
+represent how `geopolitical_exposure`/`disaster_exposure`/`cyber_exposure`
+interact with disruption here, which a tree ensemble captures easily --
+**not** that graph structure adds nothing. Feature importances put those
+three static exposure features at the top (~46% of total importance
+combined), which is exactly the mechanism
+`GRAPHSAGE_PHASE_A5_ROOT_CAUSE_FINDINGS.md` traced for GraphSAGE's own
+cross-dataset failure: those features look highly informative *within*
+whichever single dataset draw happened to disrupt the regions they point
+at, but the region-event assignment is close to independent of any risk
+feature, so nothing learned from it should transfer to a different draw.
+
+Checked directly: run Random Forest with the same D2 cross-dataset
+protocol used for Logistic Regression
+(`run_random_forest_baseline_cross_dataset`, `scripts/run_cross_dataset_
+experiment.py`) and its huge within-dataset lead **evaporates harder than
+either GraphSAGE's or Logistic Regression's**:
+
+| Direction | Within-dataset PR-AUC | Cross-dataset PR-AUC |
+|---|---:|---:|
+| seed43 -> seed44 (Logistic Regression) | 0.304 | 0.057 |
+| seed43 -> seed44 (Random Forest) | 0.908 | 0.056 |
+| seed44 -> seed43 (Logistic Regression) | 0.046 | 0.026 |
+| seed44 -> seed43 (Random Forest) | 0.083 | 0.028 |
+
+Random Forest's cross-dataset PR-AUC lands at essentially the same low
+level Logistic Regression's does in both directions, despite starting from
+a within-dataset score 2-3x higher -- because a more expressive model fits
+the same one-draw regional-exposure coincidence *harder*, not because it
+found some additional generalizable signal. **This is the answer to "can
+the classical models be made better": yes, substantially, on the metric
+that was actually being reported (within-dataset test PR-AUC) -- but that
+improvement does not touch the separate, already-diagnosed
+non-generalization problem, and pursuing it further (more powerful models,
+more tuning) will keep chasing the wrong thing per Phase A.5's decision
+gate (multi-world training, not a stronger single-dataset model, is what
+that problem needs).**
 
 **Read this recall carefully — it is not early warning.** Splitting
 test-positive examples by whether the supplier was already visibly
@@ -107,7 +153,10 @@ checkpoint, never builds a test-split snapshot), evaluation/metrics/
 calibration, and two integration tests (in-process, and a subprocess run of
 the actual CLI script against a tiny on-disk benchmark).
 
-**Full suite: 161/161 passing** (90 original dataset-framework tests + 71 new).
+**Full suite: 197/197 passing** (2 skipped pending `scripts/calibrate.py`;
+includes the Random Forest baseline tests added alongside
+`run_random_forest_baseline`/`run_random_forest_baseline_cross_dataset`
+above).
 
 ## Key decisions (documented in code, summarized here)
 

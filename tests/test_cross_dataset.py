@@ -11,6 +11,7 @@ import pytest
 from scm_dataset.modeling.baselines import (
     run_logistic_regression_baseline_cross_dataset,
     run_majority_baseline_cross_dataset,
+    run_random_forest_baseline_cross_dataset,
 )
 from scm_dataset.modeling.evaluate import evaluate_experiment, evaluate_on_target_dataset, generate_predictions
 from scm_dataset.modeling.graphsage import build_model
@@ -151,3 +152,40 @@ def test_logistic_regression_cross_dataset_never_touches_target_labels_for_fitti
     assert baseline.threshold == tampered_result.threshold
     # risk_probability depends only on features (unchanged), not the tampered target column
     assert (baseline.predictions["risk_probability"].values == tampered_result.predictions["risk_probability"].values).all()
+
+
+def test_random_forest_cross_dataset_fits_only_on_source_train(tiny_benchmark, tiny_benchmark_b):
+    config = make_tiny_config()
+    prepared_source = prepare_from_benchmark(config, tiny_benchmark)
+    prepared_target = prepare_for_cross_dataset_eval(config, tiny_benchmark_b, prepared_source.preprocessor)
+
+    result = run_random_forest_baseline_cross_dataset(prepared_source, prepared_target, config.threshold, seed=42)
+    assert set(result.predictions["split"].unique()) == {"test"}
+    assert result.predictions["risk_probability"].between(0.0, 1.0).all()
+    assert len(result.predictions) == len(prepared_target.examples)
+
+
+def test_random_forest_cross_dataset_never_touches_target_labels_for_fitting(tiny_benchmark, tiny_benchmark_b):
+    # Same guarantee as the Logistic Regression version above, for the tree
+    # ensemble: only the final scoring step should ever read prepared_target,
+    # and only its features, never its labels, until metrics are computed.
+    config = make_tiny_config()
+    prepared_source = prepare_from_benchmark(config, tiny_benchmark)
+    prepared_target = prepare_for_cross_dataset_eval(config, tiny_benchmark_b, prepared_source.preprocessor)
+
+    baseline = run_random_forest_baseline_cross_dataset(prepared_source, prepared_target, config.threshold, seed=42)
+
+    tampered_target = prepare_for_cross_dataset_eval(config, tiny_benchmark_b, prepared_source.preprocessor)
+    tampered_target.examples = tampered_target.examples.copy()
+    tampered_target.examples["target"] = 1  # every example now "positive" -- must not affect the fitted model/threshold
+
+    tampered_result = run_random_forest_baseline_cross_dataset(prepared_source, tampered_target, config.threshold, seed=42)
+    assert baseline.threshold == tampered_result.threshold
+    # np.allclose, not exact equality: RandomForestClassifier(n_jobs=-1)'s
+    # per-tree probability averaging happens across threads, whose
+    # floating-point summation order (and therefore the ~1e-16-level
+    # rounding) isn't guaranteed identical run to run even with the same
+    # random_state -- unlike Logistic Regression's single-threaded, exactly
+    # reproducible fit above. What must hold is that the tampered target
+    # labels didn't change the model's predictions in any way that matters.
+    assert np.allclose(baseline.predictions["risk_probability"].values, tampered_result.predictions["risk_probability"].values)

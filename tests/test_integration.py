@@ -25,7 +25,7 @@ import pandas as pd
 import yaml
 
 from scm_dataset.export.csv import export_graph
-from scm_dataset.modeling.baselines import run_logistic_regression_baseline, run_majority_baseline
+from scm_dataset.modeling.baselines import run_logistic_regression_baseline, run_majority_baseline, run_random_forest_baseline
 from scm_dataset.modeling.evaluate import evaluate_experiment
 from scm_dataset.modeling.train import train_graphsage
 
@@ -54,8 +54,10 @@ def test_prepare_train_evaluate_in_process(tiny_prepared_data):
 
     majority = run_majority_baseline(tiny_prepared_data, tiny_prepared_data.config.threshold)
     logreg = run_logistic_regression_baseline(tiny_prepared_data, tiny_prepared_data.config.threshold, seed=42)
+    random_forest = run_random_forest_baseline(tiny_prepared_data, tiny_prepared_data.config.threshold, seed=42)
     assert majority.predictions["risk_probability"].between(0.0, 1.0).all()
     assert logreg.predictions["risk_probability"].between(0.0, 1.0).all()
+    assert random_forest.predictions["risk_probability"].between(0.0, 1.0).all()
 
 
 def _write_benchmark_to_disk(benchmark, benchmark_root: Path) -> None:
@@ -139,8 +141,12 @@ def test_run_graphsage_experiment_script_end_to_end(tiny_benchmark, tmp_path):
     assert metadata["seed"] == 42
     assert metadata["prediction_horizon"] == 4
 
-    baseline_dirs = list(output_dir.glob("*majority_baseline*")) + list(output_dir.glob("*logistic_regression_baseline*"))
-    assert len(baseline_dirs) == 2
+    baseline_dirs = (
+        list(output_dir.glob("*majority_baseline*"))
+        + list(output_dir.glob("*logistic_regression_baseline*"))
+        + list(output_dir.glob("*random_forest_baseline*"))
+    )
+    assert len(baseline_dirs) == 3
     for baseline_dir in baseline_dirs:
         assert (baseline_dir / "predictions.csv").exists()
         assert (baseline_dir / "metrics.json").exists()
@@ -206,5 +212,8 @@ def test_run_cross_dataset_experiment_script_end_to_end(tiny_benchmark, tiny_ben
 
     baseline_dirs = list(output_dir.glob("*crossdataset*baselines"))
     assert len(baseline_dirs) == 1
-    for prefix in ("majority_within_seed", "majority_cross_dataset", "logreg_within_seed", "logreg_cross_dataset"):
+    for prefix in (
+        "majority_within_seed", "majority_cross_dataset", "logreg_within_seed", "logreg_cross_dataset",
+        "random_forest_within_seed", "random_forest_cross_dataset",
+    ):
         assert (baseline_dirs[0] / f"metrics_{prefix}.json").exists()

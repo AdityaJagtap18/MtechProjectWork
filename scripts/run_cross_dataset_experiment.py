@@ -42,6 +42,8 @@ from scm_dataset.modeling.baselines import (
     run_logistic_regression_baseline_cross_dataset,
     run_majority_baseline,
     run_majority_baseline_cross_dataset,
+    run_random_forest_baseline,
+    run_random_forest_baseline_cross_dataset,
 )
 from scm_dataset.modeling.config import load_config
 from scm_dataset.modeling.data import load_benchmark
@@ -170,6 +172,8 @@ def main() -> None:
     majority_cross = run_majority_baseline_cross_dataset(prepared_source, prepared_target, config.threshold)
     logreg_within = run_logistic_regression_baseline(prepared_source, config.threshold, seed=seeds[0])
     logreg_cross = run_logistic_regression_baseline_cross_dataset(prepared_source, prepared_target, config.threshold, seed=seeds[0])
+    rf_within = run_random_forest_baseline(prepared_source, config.threshold, seed=seeds[0])
+    rf_cross = run_random_forest_baseline_cross_dataset(prepared_source, prepared_target, config.threshold, seed=seeds[0])
 
     baseline_run_dir = new_run_dir(config.experiment.output_dir, f"{tag}_baselines")
     save_config(baseline_run_dir, config)
@@ -177,9 +181,12 @@ def main() -> None:
     _save_metrics_pair(baseline_run_dir, "majority_cross_dataset", majority_cross, {"train_dataset": args.source_dataset_id, "test_dataset": args.target_dataset_id})
     _save_metrics_pair(baseline_run_dir, "logreg_within_seed", logreg_within, {"dataset": args.source_dataset_id})
     _save_metrics_pair(baseline_run_dir, "logreg_cross_dataset", logreg_cross, {"train_dataset": args.source_dataset_id, "test_dataset": args.target_dataset_id})
+    _save_metrics_pair(baseline_run_dir, "random_forest_within_seed", rf_within, {"dataset": args.source_dataset_id})
+    _save_metrics_pair(baseline_run_dir, "random_forest_cross_dataset", rf_cross, {"train_dataset": args.source_dataset_id, "test_dataset": args.target_dataset_id})
     print(f"Saved baselines -> {baseline_run_dir}")
-    print(f"  majority   within={majority_within.metrics_by_split.get('test', {}).get('pr_auc')}  cross={majority_cross.metrics_by_split.get('test', {}).get('pr_auc')}")
-    print(f"  logreg     within={logreg_within.metrics_by_split.get('test', {}).get('pr_auc')}  cross={logreg_cross.metrics_by_split.get('test', {}).get('pr_auc')}")
+    print(f"  majority       within={majority_within.metrics_by_split.get('test', {}).get('pr_auc')}  cross={majority_cross.metrics_by_split.get('test', {}).get('pr_auc')}")
+    print(f"  logreg         within={logreg_within.metrics_by_split.get('test', {}).get('pr_auc')}  cross={logreg_cross.metrics_by_split.get('test', {}).get('pr_auc')}")
+    print(f"  random_forest  within={rf_within.metrics_by_split.get('test', {}).get('pr_auc')}  cross={rf_cross.metrics_by_split.get('test', {}).get('pr_auc')}")
 
 
 if __name__ == "__main__":
