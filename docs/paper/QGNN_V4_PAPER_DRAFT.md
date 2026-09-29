@@ -178,6 +178,50 @@ quantum head. All computation was run on CPU, in an ideal, noise-free
 simulator — no physical quantum hardware was used, and no claim of quantum
 computational advantage is made.
 
+**Controlled variation.** Rather than accept a single headline comparison,
+the QGNN head's own design was varied one factor at a time against fixed
+controls — architecture family, optimizer, and threshold policy held
+constant throughout. Six factors were investigated: qubit count (4/6/8,
+Phase 3, 5 seeds each), circuit depth (1/2/3 variational layers, Phase 3,
+5 seeds at 1 layer), entanglement ansatz (StronglyEntangling/
+hardware-efficient ring/reduced-entanglement chain, matched at 6 qubits/2
+layers, Phase 4 Stage 5, 5 seeds each), projection architecture (linear/
+nonlinear/pre-norm/PCA-informed, Phase 4 Stage 2, 2-seed pilot), quantum
+parameter initialization (default/small-Gaussian/identity-like, later a
+5-point Gaussian-std sweep, Phase 4 Stages 4 and 4b, 2-seed pilots with a
+5-seed expansion for identity-like only), and angle-encoding scheme (scale,
+clip-vs-tanh, data re-uploading, Encoding Investigation, 2-seed pilot). Each
+phase changed exactly one factor while holding every other setting fixed,
+so any effect observed could be attributed to that factor specifically —
+though seed count itself varied by design, following this project's own
+pilot-then-expand staging rather than a uniform 5-seed standard across
+every factor (`QGNN_V4_FINAL_RESEARCH_SUMMARY.md` §18 flags which pilot
+findings were never confirmed at full scale). This mirrors the
+feature-map/ansatz sensitivity analysis reported for QGNN-based fraud
+detection, where classifier performance is likewise systematically probed
+across encoding and ansatz configurations rather than reported as a single
+score \cite{QCinFraudDetection}.
+
+**Table 2 — The six ablated factors, primary (temporal) split only**
+
+| Factor | Configuration | Seeds | Primary PR-AUC | Outcome |
+|---|---|---:|---:|---|
+| *(reference)* | Classical GraphSAGE-Full | 5 | 0.807 ± 0.066 | Baseline |
+| *(reference)* | QGNN-v4 standing reference | 5 | 0.811 ± 0.074 | Baseline |
+| Qubit count | 4 qubits | 5 | 0.847 ± 0.102 | Highest nominal mean, but variance ~40% higher than reference — not confirmed robust |
+| Qubit count | 8 qubits | 5 | 0.810 | Within noise of reference |
+| Circuit depth | 1 layer | 5 | 0.693 | Substantially worse — dropped |
+| Circuit depth | 3 layers | 0 (run killed) | — | Run failed mid-batch, zero usable data — not evidence either way |
+| Ansatz | Hardware-efficient ring | 5 | 0.807 | Within noise of reference |
+| Ansatz | Reduced entanglement | 5 | 0.814 | Within noise of reference |
+| Projection | Nonlinear / pre-norm / PCA-informed | 2 (pilot) | 0.391–0.729 | All underperformed — dropped, never expanded to 5 seeds |
+| Initialization | Small-Gaussian / identity-like | 2 (pilot) | 0.726–0.828 | Nominal gain, not confirmed |
+| Initialization | Identity-like, 5-seed expansion | 5 | 0.777 ± 0.059 | Earlier stability claim did not replicate — dropped |
+| Encoding | Scale / clip / re-uploading | 2 (pilot) | 0.581–0.803 | No seed-consistent improvement — dropped, never expanded |
+
+*Source: `QGNN_V4_MASTER_RESULTS.csv`, primary-split rows only; severity
+columns omitted per this paper's scope.*
+
 ### 4.2 Dataset and Benchmarking
 
 As described in Section 3, all experiments use the `scm_v1_black_swan_seed43`
@@ -226,6 +270,13 @@ are reported alongside it for a complete picture.
 `QGNN_V4_CLASSICAL_BASELINE.md`; `QGNN_V4_PHASE2C_REPORT.md`.*
 
 ### 4.4 Results and Analysis
+
+![Primary PR-AUC across all tested configurations, green = 5-seed full evaluation, red = 2-seed pilot](../../final_figures/fig2_ablation_primary_pr_auc.png)
+
+*Figure 2 — Primary PR-AUC for every configuration in Table 2, plotted
+against the QGNN-v4 and classical references (dashed/dotted lines). Source:
+`final_figures/fig2_ablation_primary_pr_auc.png`, built directly from
+`QGNN_V4_MASTER_RESULTS.csv`.*
 
 On the primary (temporal) split, the two models are statistically close on
 ranking quality: PR-AUC of 0.807 ± 0.066 (classical) vs. 0.811 ± 0.074
