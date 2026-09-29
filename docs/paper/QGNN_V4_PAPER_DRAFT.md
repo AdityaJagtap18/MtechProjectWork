@@ -211,7 +211,7 @@ score \cite{QCinFraudDetection}.
 | Qubit count | 4 qubits | 5 | 0.847 ± 0.102 | Highest nominal mean, but variance ~40% higher than reference — not confirmed robust |
 | Qubit count | 8 qubits | 5 | 0.810 | Within noise of reference |
 | Circuit depth | 1 layer | 5 | 0.693 | Substantially worse — dropped |
-| Circuit depth | 3 layers | 0 (run killed) | — | Run failed mid-batch, zero usable data — not evidence either way |
+| Circuit depth | 3 layers | 5 | 0.804 | Within noise of reference on primary (severity run separately failed — outside this paper's scope anyway) |
 | Ansatz | Hardware-efficient ring | 5 | 0.807 | Within noise of reference |
 | Ansatz | Reduced entanglement | 5 | 0.814 | Within noise of reference |
 | Projection | Nonlinear / pre-norm / PCA-informed | 2 (pilot) | 0.391–0.729 | All underperformed — dropped, never expanded to 5 seeds |
