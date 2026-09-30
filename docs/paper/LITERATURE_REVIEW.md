@@ -18,15 +18,10 @@ availability as unsolved \cite{GNNSCM}.
 
 Classical (non-graph) ML on real operational data is already
 production-deployed at comparable or higher accuracy: XGBoost predicting
-component failures and part demand at HPE \cite{larbi2025}, an
-LSTM+XGBoost pipeline reaching F1 0.91 on late-delivery risk under a
-temporal train/test split — the same split discipline this project uses
-\cite{rahman2026a} — and similar deployments elsewhere
-\cite{supplychainDelayDetection, sayyad2024}. A systematic review of ten
-such studies explicitly names "the need for deep and hybrid models" as
-the field's open gap \cite{edhrabooh2024}, and a broader GNN-architecture
-review agrees, listing hybrid and heterogeneous GNNs as future work
-rather than demonstrated results \cite{liu2026}.
+component failures and part demand at HPE \cite{larbi2025}, and similar
+deployments elsewhere \cite{supplychainDelayDetection, sayyad2024}. A
+systematic review of ten such studies explicitly names "the need for deep
+and hybrid models" as the field's open gap \cite{edhrabooh2024}.
 
 **Gap.** All of this is single-architecture classical ML or purely
 classical GNNs. None combines graph-structured supply chain modeling
@@ -39,9 +34,7 @@ competing heads instead of one.
 Quantum computing's foothold here is on *optimization*, not prediction: a
 review surveys QAOA/annealing/QUBO approaches to routing and inventory,
 naming implementation difficulty as the real bottleneck
-\cite{QCinSupplyChian}, and a quantized policy-iteration algorithm for an
-inventory MDP is presented as a feasibility study, not a performance
-result \cite{jiang2022}.
+\cite{QCinSupplyChian}.
 
 **Gap.** Quantum methods here never touch prediction or combine with a
 GNN — domain receptiveness to quantum methods, not a disruption-prediction
@@ -94,9 +87,7 @@ and scalability limits \cite{rahman2026, lamichhane2025} — the same
 reasoning behind this project's frozen-encoder design. A review of 23 QML
 classification papers finds typical gains of 3-10% over classical,
 limited by hardware noise \cite{mohammadisavadkoohi2025} — consistent
-with this project's own near-parity, not clear-superiority, result. An
-earlier foundational survey frames the field's theoretical motivations
-\cite{ramezani2020}.
+with this project's own near-parity, not clear-superiority, result.
 
 **Gap.** These surveys flag hybrid architectures as promising but supply
 no evidence on *why* a hybrid model's performance decouples from its
@@ -125,4 +116,8 @@ CUDA-Q/GPU engineering (`brown2026`, `kim2026`, `stein2024`, `kim2023`,
 cryptography/security (`ylmaz2026`, `madje2024`, `mahmood2024`), and
 off-domain QNN applications (`kan2024`, `siddiqui2025`, `subbiyan2025`,
 `ganguly2026`) — no tie to supply chain risk or fraud classification.
-Row 40 (IJHIT paper) held out pending author name from you.
+`jiang2022`, `rahman2026a`, `liu2026`, and `ramezani2020` are also left
+uncited here: real papers from `LR_filled1.xlsx`, but not currently
+present as `\bibitem` entries in the paper's own bibliography, so citing
+them here would produce unresolved references. Row 40 (IJHIT paper) held
+out pending author name from you.
