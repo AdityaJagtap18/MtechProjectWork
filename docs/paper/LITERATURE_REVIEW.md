@@ -103,33 +103,16 @@ no evidence on *why* a hybrid model's performance decouples from its
 classical counterpart on a specific property like calibration — the gap
 this project's diagnostic work targets.
 
-## 5. Hybrid Architectures in Adjacent, Non-Financial Domains
-
-Two papers use the same architectural pattern elsewhere. A
-quantum-enhanced ANN for medical image compression runs quantum-first,
-classical-second — the reverse of this project's ordering — with strong
-results \cite{subbiyan2025}. More tellingly, a GNN+VQC hybrid for
-space-data-center routing — the same combination as this project — finds
-the VQC backend *underperforms* both classical and photonic baselines at
-orders-of-magnitude higher latency \cite{ganguly2026}: independent,
-cross-domain confirmation that a GNN+VQC hybrid failing to beat its
-classical counterpart is not specific to this project's dataset.
-
-**Gap.** Neither paper investigates *why* the quantum component under-
-or over-performs — no representation-level diagnostic, which is exactly
-what this project runs to explain its own calibration gap.
-
 ---
 
 ## Summary
 
 Three non-overlapping bodies of work — classical/graph supply chain risk
 (§1), quantum supply chain optimization (§2), quantum/hybrid fraud
-classifiers (§3) — framed by QML surveys (§4) and cross-domain GNN+VQC
-precedents (§5). Nothing reviewed sits at their intersection:
-graph-structured supply-chain risk prediction, under a controlled
-classical-vs-quantum protocol, with a frozen shared encoder. That
-intersection is this project's contribution, and §3 — not the
+classifiers (§3) — framed by QML surveys (§4). Nothing reviewed sits at
+their intersection: graph-structured supply-chain risk prediction, under
+a controlled classical-vs-quantum protocol, with a frozen shared encoder.
+That intersection is this project's contribution, and §3 — not the
 supply-chain literature — is where the closest comparison-protocol
 precedents actually come from.
 
@@ -140,6 +123,6 @@ precedents actually come from.
 CUDA-Q/GPU engineering (`brown2026`, `kim2026`, `stein2024`, `kim2023`,
 `kulkarni2026`, `marevac2026`, `rubinshtein2025`, `bayraktar2023`),
 cryptography/security (`ylmaz2026`, `madje2024`, `mahmood2024`), and
-off-domain QNN applications (`kan2024`, `siddiqui2025`) — no tie to
-supply chain risk, fraud classification, or the GNN+VQC pattern. Row 40
-(IJHIT paper) held out pending author name from you.
+off-domain QNN applications (`kan2024`, `siddiqui2025`, `subbiyan2025`,
+`ganguly2026`) — no tie to supply chain risk or fraud classification.
+Row 40 (IJHIT paper) held out pending author name from you.
