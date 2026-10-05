@@ -24,16 +24,16 @@ def figure1():
 
     x, w = 20, 60
     y = 87
-    box(ax, x, y, w, 4.2, "Synthetic Supply-Chain Data\n(scm_v1_black_swan_seed43)", face=COLOR_DATA, edge=COLOR_DATA_EDGE)
+    box(ax, x, y, w, 4.2, "Synthetic Supply-Chain Data\n(scm_v1_black_swan_seed43)", face=COLOR_DATA, edge=COLOR_DATA_EDGE, fontweight="bold")
     down_arrow(ax, 50, y, y - 3.2)
     y -= 7.4
-    box(ax, x, y, w, 4.2, "Data Generation / Loading\n(graph, operations, events, labels)", face=COLOR_DATA, edge=COLOR_DATA_EDGE)
+    box(ax, x, y, w, 4.2, "Data Generation / Loading\n(graph, operations, events, labels)", face=COLOR_DATA, edge=COLOR_DATA_EDGE, fontweight="bold")
     down_arrow(ax, 50, y, y - 3.2)
     y -= 7.4
-    box(ax, x, y, w, 4.2, "Supply-Chain Graph Construction\n2,670 nodes . 7,675 edges . 9 relation types", face=COLOR_DATA, edge=COLOR_DATA_EDGE)
+    box(ax, x, y, w, 4.2, "Supply-Chain Graph Construction\n2,670 nodes . 7,675 edges . 9 relation types", face=COLOR_DATA, edge=COLOR_DATA_EDGE, fontweight="bold")
     down_arrow(ax, 50, y, y - 3.2)
     y -= 7.4
-    box(ax, x, y, w, 4.2, "Node / Edge Features\n(leakage-safe rolling aggregates, static attributes)", face=COLOR_DATA, edge=COLOR_DATA_EDGE)
+    box(ax, x, y, w, 4.2, "Node / Edge Features\n(leakage-safe rolling aggregates, static attributes)", face=COLOR_DATA, edge=COLOR_DATA_EDGE, fontweight="bold")
     down_arrow(ax, 50, y, y - 3.2)
     y -= 7.4
     box(ax, x, y, w, 4.6, "Classical GraphSAGE (HeteroGraphSAGE)\n2-layer mean-aggregation SAGEConv, hidden_dim=128", face=COLOR_CLASSICAL, edge=COLOR_CLASSICAL_EDGE, fontweight="bold")
@@ -45,19 +45,19 @@ def figure1():
     down_arrow(ax, 32, branch_y, branch_y - 4.5)
     down_arrow(ax, 68, branch_y, branch_y - 4.5)
     y2 = branch_y - 9
-    box(ax, 12, y2, 34, 5.2, "Classical Baseline\nMLP(128->64->1) classifier\n(full end-to-end training)", face=COLOR_CLASSICAL, edge=COLOR_CLASSICAL_EDGE)
-    box(ax, 54, y2, 34, 5.2, "QGNN-v4 Head\nLinear(128,6) -> quantum circuit\n-> LayerNorm -> Linear(6,1)", face=COLOR_QUANTUM, edge=COLOR_QUANTUM_EDGE)
+    box(ax, 12, y2, 34, 5.2, "Classical Baseline\nMLP(128->64->1) classifier\n(full end-to-end training)", face=COLOR_CLASSICAL, edge=COLOR_CLASSICAL_EDGE, fontweight="bold")
+    box(ax, 54, y2, 34, 5.2, "QGNN-v4 Head\nLinear(128,6) -> quantum circuit\n-> LayerNorm -> Linear(6,1)", face=COLOR_QUANTUM, edge=COLOR_QUANTUM_EDGE, fontweight="bold")
 
     down_arrow(ax, 29, y2, y2 - 3.2)
     down_arrow(ax, 71, y2, y2 - 3.2)
     y3 = y2 - 7.4
-    box(ax, 12, y3, 34, 3.6, "Risk Probability\n(Classical path)", face=COLOR_OUTPUT, edge=COLOR_OUTPUT_EDGE)
-    box(ax, 54, y3, 34, 3.6, "Risk Probability\n(QGNN-v4 path)", face=COLOR_OUTPUT, edge=COLOR_OUTPUT_EDGE)
+    box(ax, 12, y3, 34, 3.6, "Risk Probability\n(Classical path)", face=COLOR_OUTPUT, edge=COLOR_OUTPUT_EDGE, fontweight="bold")
+    box(ax, 54, y3, 34, 3.6, "Risk Probability\n(QGNN-v4 path)", face=COLOR_OUTPUT, edge=COLOR_OUTPUT_EDGE, fontweight="bold")
 
     arrow(ax, 29, y3, 42, y3 - 3.5, connectionstyle="arc3,rad=0.15")
     arrow(ax, 71, y3, 58, y3 - 3.5, connectionstyle="arc3,rad=-0.15")
     y4 = y3 - 7.2
-    box(ax, 22, y4, 56, 4.4, "Evaluation: PR-AUC, ROC-AUC, F1, MCC, Brier, ECE\nPrimary (temporal) split and Severity (OOD) split", face=COLOR_OUTPUT, edge=COLOR_OUTPUT_EDGE, fontweight="bold")
+    box(ax, 22, y4, 56, 4.4, "Evaluation: PR-AUC, ROC-AUC, F1, MCC, Brier, ECE\nPrimary (temporal) split", face=COLOR_OUTPUT, edge=COLOR_OUTPUT_EDGE, fontweight="bold")
 
     legend_swatch(ax, 4, 4, 3, 2, COLOR_DATA, COLOR_DATA_EDGE, "Data / graph construction", fontsize=7.5)
     legend_swatch(ax, 4, 1.3, 3, 2, COLOR_FROZEN, COLOR_FROZEN_EDGE, "Frozen (no gradient beyond this point)", fontsize=7.5)
