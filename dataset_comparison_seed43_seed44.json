@@ -1,0 +1,511 @@
+{
+  "dataset_a": "scm_v1_black_swan_seed43",
+  "dataset_b": "scm_v1_black_swan_seed44",
+  "feature_mode_checked": "full",
+  "rolling_windows_checked": [
+    4,
+    8,
+    12
+  ],
+  "node_counts": {
+    "a": {
+      "supplier": 300,
+      "procurement": 2000,
+      "material": 100,
+      "plant": 50,
+      "product": 200,
+      "region": 20
+    },
+    "b": {
+      "supplier": 300,
+      "procurement": 2000,
+      "material": 100,
+      "plant": 50,
+      "product": 200,
+      "region": 20
+    },
+    "match": true
+  },
+  "edge_counts": {
+    "a": {
+      "supplier_material": 276,
+      "material_plant": 649,
+      "plant_product": 200,
+      "product_region": 200,
+      "supplier_region": 300,
+      "plant_region": 50,
+      "supplier_procurement": 2000,
+      "procurement_material": 2000,
+      "procurement_plant": 2000
+    },
+    "b": {
+      "supplier_material": 276,
+      "material_plant": 649,
+      "plant_product": 200,
+      "product_region": 200,
+      "supplier_region": 300,
+      "plant_region": 50,
+      "supplier_procurement": 2000,
+      "procurement_material": 2000,
+      "procurement_plant": 2000
+    },
+    "match": true
+  },
+  "horizon_periods": {
+    "a": 104,
+    "b": 104,
+    "match": true
+  },
+  "feature_columns": {
+    "a": {
+      "supplier": {
+        "numeric": [
+          "order_volume_4",
+          "orders_count_4",
+          "delivery_volume_4",
+          "fulfillment_ratio_4",
+          "order_volume_8",
+          "orders_count_8",
+          "delivery_volume_8",
+          "fulfillment_ratio_8",
+          "order_volume_12",
+          "orders_count_12",
+          "delivery_volume_12",
+          "fulfillment_ratio_12",
+          "tier",
+          "capacity",
+          "capacity_utilization",
+          "reliability",
+          "financial_health",
+          "lead_time_mean",
+          "lead_time_variability",
+          "quality_score",
+          "inventory_buffer",
+          "substitution_availability",
+          "geopolitical_exposure",
+          "disaster_exposure",
+          "cyber_exposure",
+          "criticality"
+        ],
+        "categorical": [
+          "industry"
+        ]
+      },
+      "procurement": {
+        "numeric": [
+          "order_quantity",
+          "order_value",
+          "order_frequency",
+          "promised_lead_time",
+          "actual_lead_time",
+          "urgency",
+          "contract_duration",
+          "priority"
+        ],
+        "categorical": []
+      },
+      "material": {
+        "numeric": [
+          "inventory_mean_4",
+          "inventory_std_4",
+          "inventory_trend_4",
+          "inventory_mean_8",
+          "inventory_std_8",
+          "inventory_trend_8",
+          "inventory_mean_12",
+          "inventory_std_12",
+          "inventory_trend_12",
+          "criticality",
+          "substitutability",
+          "demand",
+          "unit_cost",
+          "inventory_level",
+          "safety_stock",
+          "supplier_count",
+          "concentration",
+          "required_quantity_per_product"
+        ],
+        "categorical": [
+          "material_category",
+          "procurement_type"
+        ]
+      },
+      "plant": {
+        "numeric": [
+          "production_mean_4",
+          "production_std_4",
+          "production_trend_4",
+          "production_mean_8",
+          "production_std_8",
+          "production_trend_8",
+          "production_mean_12",
+          "production_std_12",
+          "production_trend_12",
+          "inventory_mean_4",
+          "inventory_mean_8",
+          "inventory_mean_12",
+          "production_capacity",
+          "utilization",
+          "operating_cost",
+          "inventory_capacity",
+          "resilience_score",
+          "downtime_cost",
+          "recovery_rate"
+        ],
+        "categorical": []
+      },
+      "product": {
+        "numeric": [
+          "demand_mean_4",
+          "demand_std_4",
+          "demand_trend_4",
+          "demand_mean_8",
+          "demand_std_8",
+          "demand_trend_8",
+          "demand_mean_12",
+          "demand_std_12",
+          "demand_trend_12",
+          "backlog_mean_4",
+          "backlog_mean_8",
+          "backlog_mean_12",
+          "demand",
+          "revenue_per_unit",
+          "margin",
+          "material_dependency",
+          "criticality",
+          "substitution_score",
+          "backlog"
+        ],
+        "categorical": [
+          "product_category"
+        ]
+      },
+      "region": {
+        "numeric": [
+          "geopolitical_risk",
+          "natural_disaster_risk",
+          "infrastructure_risk",
+          "trade_risk",
+          "cyber_risk",
+          "transport_reliability"
+        ],
+        "categorical": []
+      }
+    },
+    "b": {
+      "supplier": {
+        "numeric": [
+          "order_volume_4",
+          "orders_count_4",
+          "delivery_volume_4",
+          "fulfillment_ratio_4",
+          "order_volume_8",
+          "orders_count_8",
+          "delivery_volume_8",
+          "fulfillment_ratio_8",
+          "order_volume_12",
+          "orders_count_12",
+          "delivery_volume_12",
+          "fulfillment_ratio_12",
+          "tier",
+          "capacity",
+          "capacity_utilization",
+          "reliability",
+          "financial_health",
+          "lead_time_mean",
+          "lead_time_variability",
+          "quality_score",
+          "inventory_buffer",
+          "substitution_availability",
+          "geopolitical_exposure",
+          "disaster_exposure",
+          "cyber_exposure",
+          "criticality"
+        ],
+        "categorical": [
+          "industry"
+        ]
+      },
+      "procurement": {
+        "numeric": [
+          "order_quantity",
+          "order_value",
+          "order_frequency",
+          "promised_lead_time",
+          "actual_lead_time",
+          "urgency",
+          "contract_duration",
+          "priority"
+        ],
+        "categorical": []
+      },
+      "material": {
+        "numeric": [
+          "inventory_mean_4",
+          "inventory_std_4",
+          "inventory_trend_4",
+          "inventory_mean_8",
+          "inventory_std_8",
+          "inventory_trend_8",
+          "inventory_mean_12",
+          "inventory_std_12",
+          "inventory_trend_12",
+          "criticality",
+          "substitutability",
+          "demand",
+          "unit_cost",
+          "inventory_level",
+          "safety_stock",
+          "supplier_count",
+          "concentration",
+          "required_quantity_per_product"
+        ],
+        "categorical": [
+          "material_category",
+          "procurement_type"
+        ]
+      },
+      "plant": {
+        "numeric": [
+          "production_mean_4",
+          "production_std_4",
+          "production_trend_4",
+          "production_mean_8",
+          "production_std_8",
+          "production_trend_8",
+          "production_mean_12",
+          "production_std_12",
+          "production_trend_12",
+          "inventory_mean_4",
+          "inventory_mean_8",
+          "inventory_mean_12",
+          "production_capacity",
+          "utilization",
+          "operating_cost",
+          "inventory_capacity",
+          "resilience_score",
+          "downtime_cost",
+          "recovery_rate"
+        ],
+        "categorical": []
+      },
+      "product": {
+        "numeric": [
+          "demand_mean_4",
+          "demand_std_4",
+          "demand_trend_4",
+          "demand_mean_8",
+          "demand_std_8",
+          "demand_trend_8",
+          "demand_mean_12",
+          "demand_std_12",
+          "demand_trend_12",
+          "backlog_mean_4",
+          "backlog_mean_8",
+          "backlog_mean_12",
+          "demand",
+          "revenue_per_unit",
+          "margin",
+          "material_dependency",
+          "criticality",
+          "substitution_score",
+          "backlog"
+        ],
+        "categorical": [
+          "product_category"
+        ]
+      },
+      "region": {
+        "numeric": [
+          "geopolitical_risk",
+          "natural_disaster_risk",
+          "infrastructure_risk",
+          "trade_risk",
+          "cyber_risk",
+          "transport_reliability"
+        ],
+        "categorical": []
+      }
+    },
+    "match": true
+  },
+  "label_columns": {
+    "a": {
+      "supplier": [
+        "supplier_id",
+        "time",
+        "supplier_disrupted",
+        "supplier_risk_score"
+      ],
+      "material": [
+        "plant_id",
+        "material_id",
+        "time",
+        "material_shortage",
+        "material_risk_score"
+      ],
+      "plant": [
+        "plant_id",
+        "time",
+        "production_loss",
+        "production_loss_fraction",
+        "plant_disruption"
+      ],
+      "product": [
+        "product_id",
+        "time",
+        "product_shortage",
+        "revenue_impact"
+      ]
+    },
+    "b": {
+      "supplier": [
+        "supplier_id",
+        "time",
+        "supplier_disrupted",
+        "supplier_risk_score"
+      ],
+      "material": [
+        "plant_id",
+        "material_id",
+        "time",
+        "material_shortage",
+        "material_risk_score"
+      ],
+      "plant": [
+        "plant_id",
+        "time",
+        "production_loss",
+        "production_loss_fraction",
+        "plant_disruption"
+      ],
+      "product": [
+        "product_id",
+        "time",
+        "product_shortage",
+        "revenue_impact"
+      ]
+    },
+    "match": true
+  },
+  "supplier_disrupted_prevalence": {
+    "a": {
+      "n_rows": 31200,
+      "n_positive": 1039,
+      "positive_rate": 0.03330128205128205
+    },
+    "b": {
+      "n_rows": 31200,
+      "n_positive": 1897,
+      "positive_rate": 0.06080128205128205
+    }
+  },
+  "onset_counts": {
+    "a": 46,
+    "b": 93
+  },
+  "events": {
+    "a": {
+      "n_events": 6,
+      "event_types": {
+        "logistics": 3,
+        "supplier_failure": 1,
+        "geopolitical": 1,
+        "cyberattack": 1
+      },
+      "severities": {
+        "2": 3,
+        "1": 2,
+        "5": 1
+      }
+    },
+    "b": {
+      "n_events": 9,
+      "event_types": {
+        "logistics": 5,
+        "geopolitical": 2,
+        "natural_disaster": 2
+      },
+      "severities": {
+        "3": 5,
+        "2": 2,
+        "1": 1,
+        "4": 1
+      }
+    }
+  },
+  "splits": {
+    "a": {
+      "temporal": {
+        "train": 73,
+        "test": 16,
+        "validation": 15
+      },
+      "scenario": {
+        "test": 54,
+        "train": 50
+      },
+      "severity": {
+        "train": 67,
+        "test": 37
+      }
+    },
+    "b": {
+      "temporal": {
+        "train": 73,
+        "test": 16,
+        "validation": 15
+      },
+      "scenario": {
+        "test": 63,
+        "train": 41
+      },
+      "severity": {
+        "train": 69,
+        "test": 35
+      }
+    }
+  },
+  "required_files_present": {
+    "a": {
+      "graph/nodes.csv": true,
+      "graph/edges.csv": true,
+      "operations/demand.csv": true,
+      "operations/production.csv": true,
+      "operations/inventory.csv": true,
+      "operations/backlog.csv": true,
+      "operations/deliveries.csv": true,
+      "operations/procurement.csv": true,
+      "labels/supplier_labels.csv": true,
+      "labels/material_labels.csv": true,
+      "labels/plant_labels.csv": true,
+      "labels/product_labels.csv": true,
+      "events/events.csv": true,
+      "events/event_impact.csv": true,
+      "splits/temporal_split.csv": true,
+      "splits/scenario_split.csv": true,
+      "splits/severity_split.csv": true
+    },
+    "b": {
+      "graph/nodes.csv": true,
+      "graph/edges.csv": true,
+      "operations/demand.csv": true,
+      "operations/production.csv": true,
+      "operations/inventory.csv": true,
+      "operations/backlog.csv": true,
+      "operations/deliveries.csv": true,
+      "operations/procurement.csv": true,
+      "labels/supplier_labels.csv": true,
+      "labels/material_labels.csv": true,
+      "labels/plant_labels.csv": true,
+      "labels/product_labels.csv": true,
+      "events/events.csv": true,
+      "events/event_impact.csv": true,
+      "splits/temporal_split.csv": true,
+      "splits/scenario_split.csv": true,
+      "splits/severity_split.csv": true
+    },
+    "all_present": true
+  },
+  "compatible_for_cross_dataset_evaluation": true
+}

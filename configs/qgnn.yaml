@@ -1,0 +1,75 @@
+# QGNN experiment config (QGNN_FAIR_BENCHMARK_AND_IMPLEMENTATION_PLAN.md).
+#
+# dataset/prediction/features/split/model/training/threshold/experiment/seed
+# are read exactly like configs/graphsage.yaml -- GraphSAGE-Reduced uses
+# these completely unchanged (model.hidden_dim etc. still describe its
+# architecture; it IS the existing HeteroGraphSAGE, just fed a narrower
+# supplier input). scripts/run_graphsage_experiment.py ignores the `qgnn:`
+# section below harmlessly if ever pointed at this file.
+dataset:
+  benchmark_path: data/benchmark
+  dataset_id: scm_v1_black_swan_seed43
+
+prediction:
+  target: supplier_disrupted
+  horizon_periods: 4
+
+features:
+  rolling_windows: [4, 8, 12]
+  min_history_periods: 12
+
+split:
+  strategy: temporal
+  train_frac: 0.7
+  val_frac: 0.15
+
+model:
+  name: hetero_graphsage
+  hidden_dim: 128
+  num_layers: 2
+  dropout: 0.20
+  aggregation: mean
+
+training:
+  epochs: 100
+  learning_rate: 0.001
+  weight_decay: 0.0001
+  early_stopping_patience: 10
+  class_weighting: balanced
+
+threshold:
+  policy: fixed
+  value: 0.5
+  target_value: 0.8
+
+experiment:
+  output_dir: experiments/qgnn
+  seeds: [42, 43, 44, 45, 46]
+
+seed: 42
+
+# QGNN-Reduced-specific (plan sections 5-9). GraphSAGE-Reduced ignores this
+# section except n_components/reduction_method, which it needs to know how
+# wide the reduced supplier input is.
+qgnn:
+  # pca | domain_selected
+  reduction_method: domain_selected
+  n_components: 6
+  # null -> reduction.DOMAIN_SELECTED_COLUMNS[n_components]'s default list
+  reduction_columns: null
+  # 1 variational layer initially (plan sections 8/10); only test 2 after
+  # the basic model is verified stable (smoke test + dimension sweep).
+  n_layers: 1
+  mlp_hidden: 8
+  # default.qubit | lightning.gpu -- measured directly (see
+  # QGNN_IMPLEMENTATION_AND_BENCHMARK.md section 10): at this qubit count,
+  # default.qubit (CPU, diff_method="backprop", true PyTorch-vectorized
+  # batching) is ~140x faster wall-clock than lightning.gpu
+  # (diff_method="adjoint", which processes a "batch" as a serialized
+  # per-row loop internally for this device) -- numerically identical
+  # results, just much slower on lightning.gpu at this scale.
+  # lightning.gpu remains fully supported and verified working (real GPU
+  # execution, correct gradients) -- QuantumCircuitLayer also
+  # automatically falls back to default.qubit if a named device cannot be
+  # constructed at all.
+  device: default.qubit

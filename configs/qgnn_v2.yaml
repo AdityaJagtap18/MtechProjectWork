@@ -1,0 +1,62 @@
+# QGNN-v2 experiment config (QGNN_V2_HYBRID_IMPLEMENTATION_AND_DEPTH_BENCHMARK.md).
+#
+# dataset/prediction/features/split/model/training/threshold/experiment/seed
+# describe the FROZEN encoder being reused (must match the config that
+# originally produced experiments/classical_gnn/*_hetero_graphsage_seed<N>
+# -- full feature mode, primary temporal split, hidden_dim=128,
+# num_layers=2) -- these are read only to reconstruct that architecture
+# and its preprocessing/split boundaries, never to retrain it.
+dataset:
+  benchmark_path: data/benchmark
+  dataset_id: scm_v1_black_swan_seed43
+
+prediction:
+  target: supplier_disrupted
+  horizon_periods: 4
+
+features:
+  rolling_windows: [4, 8, 12]
+  min_history_periods: 12
+  feature_mode: full
+
+split:
+  strategy: temporal
+  train_frac: 0.7
+  val_frac: 0.15
+
+model:
+  name: hetero_graphsage
+  hidden_dim: 128
+  num_layers: 2
+  dropout: 0.20
+  aggregation: mean
+
+training:
+  epochs: 100
+  learning_rate: 0.001
+  weight_decay: 0.0001
+  early_stopping_patience: 10
+  class_weighting: balanced
+
+threshold:
+  policy: fixed
+  value: 0.5
+  target_value: 0.8
+
+experiment:
+  output_dir: experiments/qgnn_v2
+  seeds: [42, 43, 44, 45, 46]
+
+seed: 42
+
+# QGNN-v2-specific (plan sections 4, 6-7). The classical head shares
+# n_components/mlp_hidden with the quantum head for a matched comparison.
+qgnn_v2:
+  n_components: 8
+  # 1-5, the primary depth experiment's independent variable (plan section 7)
+  n_layers: 2
+  mlp_hidden: 8
+  # default.qubit | lightning.gpu -- see QGNN_IMPLEMENTATION_AND_BENCHMARK.md
+  # section 10/12 for why default.qubit is the practical choice at this
+  # qubit count; QuantumCircuitLayer falls back to it automatically anyway.
+  device: default.qubit

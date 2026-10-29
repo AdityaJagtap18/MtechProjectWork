@@ -1,0 +1,52 @@
+{
+  "reference_strongly_entangling": {
+    "ansatz": "strongly_entangling",
+    "n_qubits": 6,
+    "n_layers": 2,
+    "num_wires": 6,
+    "num_gates": 30,
+    "depth": 12,
+    "gate_types": {
+      "RY": 6,
+      "Rot": 12,
+      "CNOT": 12
+    },
+    "trainable_params": 36,
+    "device": "default.qubit",
+    "diff_method": "backprop",
+    "fig_name": "fig_appendixB1_reference_circuit_pennylane.png"
+  },
+  "hardware_efficient_ring": {
+    "ansatz": "hardware_efficient_ring",
+    "n_qubits": 6,
+    "n_layers": 2,
+    "num_wires": 6,
+    "num_gates": 42,
+    "depth": 17,
+    "gate_types": {
+      "RY": 18,
+      "RZ": 12,
+      "CNOT": 12
+    },
+    "trainable_params": 24,
+    "device": "default.qubit",
+    "diff_method": "backprop",
+    "fig_name": "fig_appendixB2_hardware_efficient_ring_pennylane.png"
+  },
+  "reduced_entanglement": {
+    "ansatz": "reduced_entanglement",
+    "n_qubits": 6,
+    "n_layers": 2,
+    "num_wires": 6,
+    "num_gates": 28,
+    "depth": 10,
+    "gate_types": {
+      "RY": 18,
+      "CNOT": 10
+    },
+    "trainable_params": 12,
+    "device": "default.qubit",
+    "diff_method": "backprop",
+    "fig_name": "fig_appendixB3_reduced_entanglement_pennylane.png"
+  }
+}

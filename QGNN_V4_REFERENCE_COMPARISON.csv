@@ -1,0 +1,15 @@
+split,metric,classical,qgnn,absolute_gap,relative_gap,note
+primary,pr_auc,0.807,0.8112,-0.0042,-0.0052,QGNN mean nominally exceeds classical here; both stds (0.066 vs 0.074) are wide enough that this is not a robust directional claim
+primary,roc_auc,0.9871,0.9775,0.0096,0.0097,
+primary,f1,0.6771,0.6565,0.0206,0.0304,
+primary,recall,0.9678,0.8975,0.0703,0.0726,
+primary,mcc,0.6845,0.6539,0.0306,0.0447,
+primary,brier,0.0418,0.0655,-0.0237,-0.567,Lower is better for Brier/ECE -- negative gap here means classical is better calibrated
+primary,ece,0.0493,0.1823,-0.133,-2.6978,Classical substantially better calibrated
+severity,pr_auc,0.4487,0.3976,0.0511,0.1139,"Classical leads with tight, non-overlapping-in-practice variance on both sides"
+severity,roc_auc,0.7275,0.6566,0.0709,0.0975,
+severity,f1,0.4113,0.4187,-0.0074,-0.018,QGNN LayerNorm-no-affine essentially at parity with classical on F1 specifically
+severity,recall,0.4406,0.4166,0.024,0.0545,
+severity,mcc,0.3624,0.3824,-0.02,-0.0552,QGNN slightly higher MCC on severity
+severity,brier,0.0857,0.1225,-0.0368,-0.4294,Classical better calibrated
+severity,ece,0.0904,0.2405,-0.1501,-1.6604,Classical substantially better calibrated
