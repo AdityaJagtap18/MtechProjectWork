@@ -57,16 +57,20 @@ savefig("fig1_classical_vs_qgnn_primary_severity.png")
 
 # --- Figure 2: Ablation summary across phases (primary PR-AUC) ---
 ablation_primary = master[(master.split == "primary") & (master.phase != "Reference")].copy()
-ablation_primary = ablation_primary.sort_values("pr_auc", ascending=True)
-fig, ax = plt.subplots(figsize=(9, 12))
+ablation_primary = ablation_primary.sort_values("pr_auc", ascending=False)
+fig, ax = plt.subplots(figsize=(12, 5.5))
 colors = ["#55A868" if st == "full" else "#C44E52" for st in ablation_primary.seed_type]
-ax.barh(ablation_primary.experiment + " (" + ablation_primary.split + ")", ablation_primary.pr_auc,
-        xerr=ablation_primary.pr_auc_std, capsize=2, color=colors)
-ax.axvline(0.8112, color="black", linestyle="--", linewidth=1, label="QGNN-v4 reference (0.811, 5-seed)")
-ax.axvline(0.8070, color="gray", linestyle=":", linewidth=1, label="Classical reference (0.807, 5-seed)")
-ax.set_xlabel("Primary PR-AUC")
-ax.set_title("Ablation summary: Primary PR-AUC, all configurations\n(green=5-seed full evaluation, red=2-seed pilot)", fontsize=11)
-ax.legend(loc="lower right", fontsize=8)
+ax.bar(ablation_primary.experiment, ablation_primary.pr_auc,
+       yerr=ablation_primary.pr_auc_std, capsize=2, color=colors)
+ax.axhline(0.8112, color="black", linestyle="--", linewidth=1, label="QGNN-v4 reference (0.811, 5-seed)")
+ax.axhline(0.8070, color="gray", linestyle=":", linewidth=1, label="Classical reference (0.807, 5-seed)")
+ax.set_ylim(0, 1.05)
+ax.set_ylabel("Primary PR-AUC")
+short_labels = ablation_primary.experiment.str.split(": ").str[-1]
+ax.set_xticks(range(len(ablation_primary)))
+ax.set_xticklabels(short_labels, rotation=75, ha="right", fontsize=7,
+                    fontweight="bold", fontfamily=["Times New Roman", "Liberation Serif"])
+ax.legend(loc="lower left", fontsize=8)
 savefig("fig2_ablation_primary_pr_auc.png")
 
 # --- Figure 3: Ablation summary across phases (severity PR-AUC) ---

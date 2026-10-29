@@ -12,6 +12,9 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from matplotlib.patches import FancyBboxPatch, FancyArrowPatch, Circle
 
+plt.rcParams["font.family"] = "serif"
+plt.rcParams["font.serif"] = ["Times New Roman", "Liberation Serif"]
+
 OUT = "MSE_Phase1/TemplatePPT/"
 INK = "#1a1a1a"
 
@@ -43,21 +46,21 @@ def system_diagram():
                                      mutation_scale=22, lw=2.4, color="#444", zorder=2))
 
     box(5, 6.75, 8.6, 1.0,
-        "Supply-chain data  →  graph construction", BLUE)
+        "Graph construction", BLUE, bold=True)
     arrow(5, 6.22, 5, 5.72)
     box(5, 5.2, 8.6, 1.0,
-        "Node and edge features\n(static attributes + leakage-safe rolling aggregates)", BLUE)
+        "Node and edge features", BLUE, bold=True)
     arrow(5, 4.67, 5, 4.17)
     box(5, 3.65, 8.6, 1.0,
-        "GraphSAGE encoder\nSupplier embedding  (frozen)", GREEN, bold=True)
+        "GraphSAGE encoder", GREEN, bold=True)
     arrow(2.9, 3.12, 2.9, 2.72)
     arrow(7.1, 3.12, 7.1, 2.72)
-    box(2.9, 2.2, 3.8, 1.0, "Classical head\nMLP classifier", GREEN)
-    box(7.1, 2.2, 3.8, 1.0, "QGNN head\nvariational quantum circuit", ORANGE)
+    box(2.9, 2.2, 3.8, 1.0, "Classical head", GREEN, bold=True)
+    box(7.1, 2.2, 3.8, 1.0, "Quantum head", ORANGE, bold=True)
     arrow(2.9, 1.67, 4.2, 1.22)
     arrow(7.1, 1.67, 5.8, 1.22)
     box(5, 0.75, 8.6, 0.9,
-        "Risk probability  →  evaluation on temporal and severity (OOD) splits",
+        "Risk probability",
         PURPLE, bold=True, fs=14)
 
     fig.subplots_adjust(left=0.01, right=0.99, top=0.995, bottom=0.005)
